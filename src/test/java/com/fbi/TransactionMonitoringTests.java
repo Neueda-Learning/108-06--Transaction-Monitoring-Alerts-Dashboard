@@ -70,7 +70,7 @@ class TransactionMonitoringTests {
 
 	@Test
 	void enforcesAlertLifecycleTransitions() throws Exception {
-		createTransaction("ACC-002", "PAYEE-X", 250, null, "lifecycle test");
+		createTransaction("ACC-002", "PAYEE-X", 15000, null, "lifecycle test");
 
 		Alert alert = alertRepository.findAll().stream()
 			.filter(a -> a.getStatus() == AlertStatus.OPEN)
@@ -155,7 +155,7 @@ class TransactionMonitoringTests {
 
 	@Test
 	void supportsDismissAndBlocksFurtherChangesFromDismissed() throws Exception {
-		createTransaction("ACC-D1", "PAYEE-D", 300, null, "dismiss flow");
+		createTransaction("ACC-D1", "PAYEE-D", 15000, null, "dismiss flow");
 		Alert alert = alertRepository.findAll().stream()
 			.filter(a -> a.getStatus() == AlertStatus.OPEN)
 			.findFirst()
