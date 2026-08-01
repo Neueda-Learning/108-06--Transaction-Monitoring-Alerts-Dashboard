@@ -8,14 +8,9 @@ import com.fbi.service.AlertService;
 import com.fbi.service.ApiMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/alerts")
@@ -51,4 +46,5 @@ public class AlertController {
         return ApiMapper.toResponse(alertService.updateStatus(id, request.status(), request.note()));
     }
 }
+
 
