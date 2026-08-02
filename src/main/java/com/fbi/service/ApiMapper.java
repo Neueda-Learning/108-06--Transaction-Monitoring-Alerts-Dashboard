@@ -17,8 +17,11 @@ public final class ApiMapper {
             transaction.getId(),
             transaction.getAccountId(),
             transaction.getPayeeId(),
+            transaction.getPayeeName(),
             transaction.getAmount(),
             transaction.getCurrency(),
+            transaction.getCountry(),
+            transaction.getStatus(),
             transaction.getOccurredAt(),
             transaction.getDescription()
         );

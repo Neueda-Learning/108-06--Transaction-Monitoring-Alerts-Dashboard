@@ -26,8 +26,10 @@ public class TransactionService {
         MonitoredTransaction transaction = new MonitoredTransaction();
         transaction.setAccountId(request.accountId());
         transaction.setPayeeId(request.payeeId());
+        transaction.setPayeeName(request.payeeName() != null ? request.payeeName() : request.payeeId());
         transaction.setAmount(request.amount());
         transaction.setCurrency(request.currency().toUpperCase());
+        transaction.setCountry(request.country());
         transaction.setOccurredAt(request.occurredAt());
         transaction.setDescription(request.description());
 
