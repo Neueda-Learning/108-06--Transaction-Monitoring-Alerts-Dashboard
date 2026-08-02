@@ -44,6 +44,7 @@ public class RuleEvaluationService {
             case VELOCITY -> isVelocityTriggered(rule, transaction);
             case NEW_PAYEE -> isNewPayeeTriggered(transaction);
             case DAILY_LIMIT -> isDailyLimitTriggered(rule, transaction);
+            case SDN_MATCH -> false; // SDN screening handled in pre-save phase
         };
     }
 
@@ -88,6 +89,7 @@ public class RuleEvaluationService {
             case VELOCITY -> "Velocity rule triggered for account " + transaction.getAccountId();
             case NEW_PAYEE -> "New payee detected for account " + transaction.getAccountId();
             case DAILY_LIMIT -> "Daily limit exceeded for account " + transaction.getAccountId();
+            case SDN_MATCH -> "SDN sanctions match for transaction " + transaction.getId();
         };
     }
 }
