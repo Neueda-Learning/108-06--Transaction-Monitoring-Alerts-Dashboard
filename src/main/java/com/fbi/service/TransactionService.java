@@ -1,27 +1,56 @@
 package com.fbi.service;
 
 import com.fbi.dto.TransactionCreateRequest;
+import com.fbi.model.Alert;
+import com.fbi.model.AlertStatus;
 import com.fbi.model.MonitoredTransaction;
+import com.fbi.model.RuleType;
+import com.fbi.model.Severity;
+import com.fbi.model.TransactionStatus;
+import com.fbi.repository.AlertRepository;
 import com.fbi.repository.MonitoredTransactionRepository;
+import com.fbi.service.SdnScreeningService.SdnMatchResult;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 @Service
 public class TransactionService {
 
+    private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
+
     private final MonitoredTransactionRepository transactionRepository;
     private final RuleEvaluationService ruleEvaluationService;
+    private final SdnScreeningService sdnScreeningService;
+    private final AlertRepository alertRepository;
 
-    public TransactionService(MonitoredTransactionRepository transactionRepository, RuleEvaluationService ruleEvaluationService) {
+    public TransactionService(
+            MonitoredTransactionRepository transactionRepository,
+            RuleEvaluationService ruleEvaluationService,
+            SdnScreeningService sdnScreeningService,
+            AlertRepository alertRepository) {
         this.transactionRepository = transactionRepository;
         this.ruleEvaluationService = ruleEvaluationService;
+        this.sdnScreeningService = sdnScreeningService;
+        this.alertRepository = alertRepository;
     }
 
+    /**
+     * Two-phase transaction processing pipeline:
+     *
+     * Phase 1 (pre-save): Screen payee name against OFAC SDN list.
+     *   - If match found: save as BLOCKED, create CRITICAL alert, return immediately.
+     *
+     * Phase 2 (post-save): Evaluate AML monitoring rules.
+     *   - If rules trigger: set status to FLAGGED.
+     *   - If no rules trigger: set status to APPROVED.
+     */
     public MonitoredTransaction createTransaction(TransactionCreateRequest request) {
         MonitoredTransaction transaction = new MonitoredTransaction();
         transaction.setAccountId(request.accountId());
@@ -33,8 +62,48 @@ public class TransactionService {
         transaction.setOccurredAt(request.occurredAt());
         transaction.setDescription(request.description());
 
+        // === PHASE 1: SDN Screening (pre-save) ===
+        SdnMatchResult sdnMatch = sdnScreeningService.screen(transaction.getPayeeName());
+
+        if (sdnMatch != null) {
+            log.warn("SDN MATCH DETECTED: payee '{}' matched '{}' (score: {})",
+                    transaction.getPayeeName(), sdnMatch.matchedEntry().name(), sdnMatch.score());
+
+            transaction.setStatus(TransactionStatus.BLOCKED);
+            MonitoredTransaction blocked = transactionRepository.save(transaction);
+
+            // Create a CRITICAL alert for the SDN match
+            Alert alert = new Alert();
+            alert.setTransactionId(blocked.getId());
+            alert.setAccountId(blocked.getAccountId());
+            alert.setRuleId(0L);
+            alert.setRuleName("SDN Sanctions Screening");
+            alert.setRuleType(RuleType.SDN_MATCH);
+            alert.setSeverity(Severity.CRITICAL);
+            alert.setStatus(AlertStatus.OPEN);
+            alert.setMessage(String.format(
+                    "BLOCKED: Payee '%s' matched SDN entry '%s' (ID: %d, %s) with %.0f%% confidence",
+                    blocked.getPayeeName(),
+                    sdnMatch.matchedEntry().name(),
+                    sdnMatch.matchedEntry().id(),
+                    sdnMatch.matchedEntry().country(),
+                    sdnMatch.score() * 100));
+            alertRepository.save(alert);
+
+            return blocked;
+        }
+
+        // === PHASE 2: Rule Evaluation (post-save) ===
         MonitoredTransaction saved = transactionRepository.save(transaction);
-        ruleEvaluationService.evaluateAndCreateAlerts(saved);
+        List<Alert> alerts = ruleEvaluationService.evaluateAndCreateAlerts(saved);
+
+        if (!alerts.isEmpty()) {
+            saved.setStatus(TransactionStatus.FLAGGED);
+        } else {
+            saved.setStatus(TransactionStatus.APPROVED);
+        }
+        transactionRepository.save(saved);
+
         return saved;
     }
 
