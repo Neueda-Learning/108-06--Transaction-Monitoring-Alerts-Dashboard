@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local reference artifacts ###
+/transaction-monitoring-&-alerts-dashboard (2)/
+/ai_studio_code.txt
+/FBI_Team_Reference_Part1.md
+/FBI_Team_Reference_Part2.md
+
