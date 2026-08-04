@@ -48,6 +48,9 @@ public class MonitoredTransaction {
     @Column(length = 64)
     private String country;
 
+    @Column(nullable = false)
+    private Integer riskScore;
+
     public MonitoredTransaction() {
     }
 
@@ -68,6 +71,9 @@ public class MonitoredTransaction {
         }
         if (status == null) {
             status = TransactionStatus.PENDING;
+        }
+        if (riskScore == null) {
+            riskScore = 0;
         }
     }
 
@@ -149,6 +155,14 @@ public class MonitoredTransaction {
 
     public void setCountry(String country) {
         this.country = country;
+    }
+
+    public Integer getRiskScore() {
+        return riskScore;
+    }
+
+    public void setRiskScore(Integer riskScore) {
+        this.riskScore = riskScore;
     }
 }
 

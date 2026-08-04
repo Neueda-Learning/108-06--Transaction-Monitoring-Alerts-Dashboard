@@ -29,16 +29,19 @@ public class TransactionService {
     private final RuleEvaluationService ruleEvaluationService;
     private final SdnScreeningService sdnScreeningService;
     private final AlertRepository alertRepository;
+    private final RiskScoringService riskScoringService;
 
     public TransactionService(
             MonitoredTransactionRepository transactionRepository,
             RuleEvaluationService ruleEvaluationService,
             SdnScreeningService sdnScreeningService,
-            AlertRepository alertRepository) {
+            AlertRepository alertRepository,
+            RiskScoringService riskScoringService) {
         this.transactionRepository = transactionRepository;
         this.ruleEvaluationService = ruleEvaluationService;
         this.sdnScreeningService = sdnScreeningService;
         this.alertRepository = alertRepository;
+        this.riskScoringService = riskScoringService;
     }
 
     /**
@@ -70,6 +73,9 @@ public class TransactionService {
                     transaction.getPayeeName(), sdnMatch.matchedEntry().name(), sdnMatch.score());
 
             transaction.setStatus(TransactionStatus.BLOCKED);
+            // A sanctions match is always the maximum-risk event, regardless of any
+            // other rule signal, so it short-circuits straight to the top score.
+            transaction.setRiskScore(RiskScoringService.MAX_SCORE);
             MonitoredTransaction blocked = transactionRepository.save(transaction);
 
             // Create a CRITICAL alert for the SDN match
@@ -102,6 +108,7 @@ public class TransactionService {
         } else {
             saved.setStatus(TransactionStatus.APPROVED);
         }
+        saved.setRiskScore(riskScoringService.calculateScore(alerts));
         transactionRepository.save(saved);
 
         return saved;
