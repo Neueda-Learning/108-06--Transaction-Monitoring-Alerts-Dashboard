@@ -629,6 +629,7 @@ td .ghost {
   padding: 10px 12px;
 }
 
+
 @media (max-width: 1200px) {
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(170px, 1fr));

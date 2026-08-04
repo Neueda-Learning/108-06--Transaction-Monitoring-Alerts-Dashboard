@@ -29,6 +29,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { toast } from 'react-hot-toast'
 import { getAlerts, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
@@ -81,6 +82,10 @@ const API_DOCS = [
   { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
   { method: 'GET', path: '/api/sdn/count' },
 ]
+
+function getAlertCreatedToastMessage(count: number) {
+  return count === 1 ? 'Alert created' : `${count} alerts created`
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
@@ -146,8 +151,14 @@ function App() {
       setTransactions(transactionResult)
       setAlerts(alertResult)
       setRules(ruleResult)
+      return {
+        transactions: transactionResult,
+        alerts: alertResult,
+        rules: ruleResult,
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load data from backend')
+      return null
     } finally {
       setLoading(false)
     }
@@ -156,6 +167,10 @@ function App() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  const showSuccessToast = useCallback((message: string) => {
+    toast.success(message, { duration: 2500 })
+  }, [])
 
   const alertsByTransaction = useMemo(() => {
     const map = new Map<number, AlertResponse[]>()
@@ -333,14 +348,23 @@ function App() {
     event.preventDefault()
     setError(null)
     try {
-      await createTransaction({
+      const existingAlertIds = new Set(alerts.map((entry) => entry.id))
+      const createdTransaction = await createTransaction({
         accountId: transactionForm.accountId,
         payeeId: transactionForm.payeeId,
         amount: Number(transactionForm.amount),
         currency: transactionForm.currency.toUpperCase(),
         description: transactionForm.description || null,
       })
-      await loadAll()
+      const refreshedData = await loadAll()
+      showSuccessToast('Transaction created')
+      const createdAlerts =
+        refreshedData?.alerts.filter(
+          (entry) => entry.transactionId === createdTransaction.id && !existingAlertIds.has(entry.id),
+        ) ?? []
+      if (createdAlerts.length > 0) {
+        showSuccessToast(getAlertCreatedToastMessage(createdAlerts.length))
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create transaction')
     }
@@ -380,6 +404,7 @@ function App() {
       dailyLimit: ruleForm.type === 'DAILY_LIMIT' ? Number(ruleForm.dailyLimit) : null,
     }
     setError(null)
+    const isCreatingRule = editingRuleId === null
     try {
       if (editingRuleId) {
         await updateRule(editingRuleId, payload)
@@ -395,8 +420,20 @@ function App() {
         amountThreshold: 10000,
       })
       await loadAll()
+      showSuccessToast(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (ruleError) {
       setError(ruleError instanceof Error ? ruleError.message : 'Failed to save rule')
+    }
+  }
+
+  const removeRule = async (id: number) => {
+    setError(null)
+    try {
+      await deleteRule(id)
+      await loadAll()
+      showSuccessToast('Rule deleted')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete rule')
     }
   }
 
@@ -407,6 +444,9 @@ function App() {
       const result = await runSimulatorScenarioRequest(scenario)
       setSimulatorResult(result)
       await loadAll()
+      if (result.alerts.length > 0) {
+        showSuccessToast(getAlertCreatedToastMessage(result.alerts.length))
+      }
     } catch (simulationError) {
       setError(simulationError instanceof Error ? simulationError.message : 'Simulator run failed')
     } finally {
@@ -1011,7 +1051,7 @@ function App() {
                           >
                             Edit
                           </button>
-                          <button type="button" className="danger" onClick={async () => { await deleteRule(entry.id); await loadAll() }}>Delete</button>
+                          <button type="button" className="danger" onClick={() => void removeRule(entry.id)}>Delete</button>
                         </td>
                       </tr>
                     ))}

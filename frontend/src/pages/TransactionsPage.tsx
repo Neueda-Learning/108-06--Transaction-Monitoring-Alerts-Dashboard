@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { toast } from 'react-hot-toast'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -39,8 +40,10 @@ export function TransactionsPage() {
     try {
       const result = await getTransactions(activeFilters)
       setTransactions(result)
+      return result
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load transactions')
+      return null
     } finally {
       setLoading(false)
     }
@@ -77,7 +80,7 @@ export function TransactionsPage() {
     setError(null)
 
     try {
-      await createTransaction({
+      const createdTransaction = await createTransaction({
         accountId,
         payeeId,
         amount: Number(amount),
@@ -87,7 +90,13 @@ export function TransactionsPage() {
       })
       setDescription('')
       setOccurredAt('')
-      await loadTransactions(filters)
+      const refreshedTransactions = await loadTransactions(filters)
+      toast.success('Transaction created')
+      const createdTransactionStatus =
+        refreshedTransactions?.find((entry) => entry.id === createdTransaction.id)?.status ?? createdTransaction.status
+      if (createdTransactionStatus === 'FLAGGED' || createdTransactionStatus === 'BLOCKED') {
+        toast.success('Alert created')
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create transaction')
     }
