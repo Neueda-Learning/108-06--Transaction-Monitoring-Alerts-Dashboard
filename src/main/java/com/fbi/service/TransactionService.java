@@ -1,6 +1,8 @@
 package com.fbi.service;
 
 import com.fbi.dto.TransactionCreateRequest;
+import com.fbi.dto.TransactionRuleResult;
+import com.fbi.exception.NotFoundException;
 import com.fbi.model.Alert;
 import com.fbi.model.AlertStatus;
 import com.fbi.model.MonitoredTransaction;
@@ -9,12 +11,16 @@ import com.fbi.model.Severity;
 import com.fbi.model.TransactionStatus;
 import com.fbi.repository.AlertRepository;
 import com.fbi.repository.MonitoredTransactionRepository;
+import com.fbi.repository.MonitoringRuleRepository;
 import com.fbi.service.SdnScreeningService.SdnMatchResult;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.jpa.domain.Specification;
@@ -29,16 +35,19 @@ public class TransactionService {
     private final RuleEvaluationService ruleEvaluationService;
     private final SdnScreeningService sdnScreeningService;
     private final AlertRepository alertRepository;
+    private final MonitoringRuleRepository monitoringRuleRepository;
 
     public TransactionService(
             MonitoredTransactionRepository transactionRepository,
             RuleEvaluationService ruleEvaluationService,
             SdnScreeningService sdnScreeningService,
-            AlertRepository alertRepository) {
+            AlertRepository alertRepository,
+            MonitoringRuleRepository monitoringRuleRepository) {
         this.transactionRepository = transactionRepository;
         this.ruleEvaluationService = ruleEvaluationService;
         this.sdnScreeningService = sdnScreeningService;
         this.alertRepository = alertRepository;
+        this.monitoringRuleRepository = monitoringRuleRepository;
     }
 
     /**
@@ -107,6 +116,36 @@ public class TransactionService {
         return saved;
     }
 
+    public MonitoredTransaction getById(Long id) {
+        return transactionRepository.findById(id)
+            .orElseThrow(() -> new NotFoundException("Transaction not found: " + id));
+    }
+
+    public List<TransactionRuleResult> getRuleResults(Long transactionId) {
+        getById(transactionId);
+
+        Map<Long, Alert> alertByRuleId = alertRepository.findByTransactionId(transactionId)
+            .stream()
+            .filter(alert -> alert.getRuleId() != null)
+            .collect(Collectors.toMap(Alert::getRuleId, Function.identity(), (left, right) -> left));
+
+        return monitoringRuleRepository.findAll().stream()
+            .map(rule -> {
+                Alert alert = alertByRuleId.get(rule.getId());
+                boolean triggered = alert != null;
+                String message = triggered ? alert.getMessage() : "Rule not triggered for this transaction";
+                return new TransactionRuleResult(
+                    rule.getId(),
+                    rule.getName(),
+                    rule.getType(),
+                    rule.getSeverity(),
+                    triggered,
+                    message
+                );
+            })
+            .toList();
+    }
+
     public List<MonitoredTransaction> search(
         String accountId,
         String payeeId,
@@ -141,4 +180,3 @@ public class TransactionService {
         return transactionRepository.findAll(spec);
     }
 }
-

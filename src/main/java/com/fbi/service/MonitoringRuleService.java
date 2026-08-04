@@ -41,6 +41,12 @@ public class MonitoringRuleService {
         return monitoringRuleRepository.save(rule);
     }
 
+    public MonitoringRule toggleActive(Long id) {
+        MonitoringRule rule = getById(id);
+        rule.setActive(!rule.isActive());
+        return monitoringRuleRepository.save(rule);
+    }
+
     public void delete(Long id) {
         if (!monitoringRuleRepository.existsById(id)) {
             throw new NotFoundException("Rule not found: " + id);
@@ -76,4 +82,3 @@ public class MonitoringRuleService {
         }
     }
 }
-
