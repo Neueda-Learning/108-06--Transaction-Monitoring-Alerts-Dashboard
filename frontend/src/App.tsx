@@ -63,17 +63,21 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
-const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH']
+const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const API_DOCS = [
   { method: 'GET', path: '/api/transactions' },
   { method: 'POST', path: '/api/transactions' },
   { method: 'GET', path: '/api/alerts' },
+  { method: 'GET', path: '/api/alerts/{id}' },
   { method: 'PATCH', path: '/api/alerts/{id}/status' },
   { method: 'GET', path: '/api/rules' },
+  { method: 'GET', path: '/api/rules/{id}' },
   { method: 'POST', path: '/api/rules' },
   { method: 'PUT', path: '/api/rules/{id}' },
   { method: 'DELETE', path: '/api/rules/{id}' },
+  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
+  { method: 'GET', path: '/api/sdn/count' },
 ]
 
 function App() {
@@ -225,7 +229,7 @@ function App() {
       txBuckets[bucketIndex].count += 1
     })
 
-    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0 }
+    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
     const statusCount: Record<AlertStatus, number> = {
       OPEN: 0,
       ACKNOWLEDGED: 0,
@@ -238,6 +242,7 @@ function App() {
       VELOCITY: 0,
       NEW_PAYEE: 0,
       DAILY_LIMIT: 0,
+      SDN_MATCH: 0,
     }
     alerts.forEach((entry) => {
       severityCount[entry.severity] += 1
@@ -251,6 +256,7 @@ function App() {
         { key: 'LOW', label: 'LOW', count: severityCount.LOW, color: '#3b82f6' },
         { key: 'MEDIUM', label: 'MEDIUM', count: severityCount.MEDIUM, color: '#f59e0b' },
         { key: 'HIGH', label: 'HIGH', count: severityCount.HIGH, color: '#dc2626' },
+        { key: 'CRITICAL', label: 'CRITICAL', count: severityCount.CRITICAL, color: '#7f1d1d' },
       ],
       byStatus: [
         { key: 'OPEN', label: 'OPEN', count: statusCount.OPEN, color: '#dc2626' },
@@ -264,6 +270,7 @@ function App() {
         { label: 'VELOCITY', count: ruleCount.VELOCITY },
         { label: 'NEW_PAYEE', count: ruleCount.NEW_PAYEE },
         { label: 'DAILY_LIMIT', count: ruleCount.DAILY_LIMIT },
+        { label: 'SDN_MATCH', count: ruleCount.SDN_MATCH },
       ],
     }
   }, [alerts, transactions])

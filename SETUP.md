@@ -53,7 +53,7 @@ Connect to MySQL and create the database:
 
 ```bash
 mysql -u root -p
-# Enter password: n3u3da!
+# Enter your local MySQL password when prompted
 ```
 
 Then in the MySQL shell:
@@ -65,7 +65,7 @@ CREATE DATABASE IF NOT EXISTS transaction_management;
 ### 3. Verify Connection
 
 ```bash
-mysql -u root -pn3u3da! -e "USE transaction_management; SELECT 1;"
+mysql -u root -p -e "USE transaction_management; SELECT 1;"
 ```
 
 ---
@@ -98,12 +98,32 @@ mvn clean compile
 
 ### 3. Run the Backend
 
+Set database credentials before starting the app if your MySQL instance requires them.
+
+**Windows PowerShell:**
+
+```powershell
+$env:DB_USERNAME = "root"
+$env:DB_PASSWORD = "your-local-password"
+mvnw.cmd spring-boot:run
+```
+
+**macOS/Linux:**
+
+```bash
+export DB_USERNAME=root
+export DB_PASSWORD=your-local-password
+./mvnw spring-boot:run
+```
+
+Or use a local Spring profile override by copying `src/main/resources/application-local.properties.example` to `src/main/resources/application-local.properties`, updating the values for your machine, and starting with the `local` profile:
+
 ```bash
 # Windows
-mvnw.cmd spring-boot:run
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 
 # macOS/Linux
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 Or:
@@ -126,21 +146,30 @@ Once running, visit:
 
 ### Backend Database Configuration
 
-The backend uses these credentials (in `src/main/resources/application.properties`):
+The backend reads shared MySQL defaults from `src/main/resources/application.properties` and expects credentials from environment variables or a local profile override.
 
 ```
 Database: transaction_management
-Username: root
-Password: n3u3da!
+Username: DB_USERNAME (defaults to root)
+Password: DB_PASSWORD
 Port: 3306
 ```
 
-If you need to change these, edit `src/main/resources/application.properties`:
+Environment-based configuration:
 
 ```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/transaction_management
+spring.datasource.url=${DB_URL:jdbc:mysql://localhost:3306/transaction_management?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true}
+spring.datasource.username=${DB_USERNAME:root}
+spring.datasource.password=${DB_PASSWORD:}
+```
+
+Local profile override:
+
+```properties
+# src/main/resources/application-local.properties (gitignored)
+spring.datasource.url=jdbc:mysql://localhost:3306/transaction_management?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
 spring.datasource.username=root
-spring.datasource.password=n3u3da!
+spring.datasource.password=your-local-password
 ```
 
 ---
@@ -207,7 +236,7 @@ npm run test:watch
 **Terminal 1 - Backend:**
 ```bash
 cd path/to/108-06--Transaction-Monitoring-Alerts-Dashboard
-mvnw.cmd spring-boot:run
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 # or: ./mvnw spring-boot:run
 ```
 
@@ -265,15 +294,20 @@ Once both services are running:
 
 ```
 GET    /api/transactions       - List all transactions
-GET    /api/transactions/{id}  - Get transaction details
 POST   /api/transactions       - Create new transaction
 
 GET    /api/alerts             - List all alerts
 GET    /api/alerts/{id}        - Get alert details
-POST   /api/alerts             - Create new alert
+PATCH  /api/alerts/{id}/status - Advance alert lifecycle status
 
 GET    /api/rules              - List all monitoring rules
+GET    /api/rules/{id}         - Get a monitoring rule
 POST   /api/rules              - Create new rule
+PUT    /api/rules/{id}         - Update a monitoring rule
+DELETE /api/rules/{id}         - Delete a monitoring rule
+
+GET    /api/sdn/search         - Fuzzy search the loaded SDN list
+GET    /api/sdn/count          - Count loaded SDN entries
 
 GET    /api-docs               - OpenAPI specification
 GET    /swagger-ui.html        - Swagger UI documentation
@@ -296,8 +330,8 @@ taskkill /PID <PID> /F
 
 **Database Connection Failed**
 - Ensure MySQL is running
-- Check credentials in `application.properties`
-- Verify database exists: `mysql -u root -pn3u3da! -e "SHOW DATABASES;"`
+- Check `DB_USERNAME` / `DB_PASSWORD` or your `application-local.properties` override
+- Verify database exists: `mysql -u root -p -e "SHOW DATABASES;"`
 
 **Compilation Errors**
 ```bash

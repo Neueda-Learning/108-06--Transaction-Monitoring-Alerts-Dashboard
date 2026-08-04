@@ -9,7 +9,7 @@ import { formatDate } from '../utils/format'
 import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const statuses: Array<AlertStatus | ''> = ['', 'OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
-const severities: Array<Severity | ''> = ['', 'LOW', 'MEDIUM', 'HIGH']
+const severities: Array<Severity | ''> = ['', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertResponse[]>([])

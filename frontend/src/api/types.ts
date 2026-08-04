@@ -1,15 +1,20 @@
-export type RuleType = 'AMOUNT_THRESHOLD' | 'VELOCITY' | 'NEW_PAYEE' | 'DAILY_LIMIT'
+export type RuleType = 'AMOUNT_THRESHOLD' | 'VELOCITY' | 'NEW_PAYEE' | 'DAILY_LIMIT' | 'SDN_MATCH'
 
-export type Severity = 'LOW' | 'MEDIUM' | 'HIGH'
+export type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
 export type AlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'INVESTIGATING' | 'CLOSED' | 'DISMISSED'
+
+export type TransactionStatus = 'PENDING' | 'APPROVED' | 'FLAGGED' | 'BLOCKED'
 
 export interface TransactionResponse {
   id: number
   accountId: string
   payeeId: string
+  payeeName: string | null
   amount: number
   currency: string
+  country: string | null
+  status: TransactionStatus | null
   occurredAt: string | null
   description: string | null
 }
@@ -17,8 +22,10 @@ export interface TransactionResponse {
 export interface TransactionCreateRequest {
   accountId: string
   payeeId: string
+  payeeName?: string | null
   amount: number
   currency: string
+  country?: string | null
   occurredAt?: string | null
   description?: string | null
 }

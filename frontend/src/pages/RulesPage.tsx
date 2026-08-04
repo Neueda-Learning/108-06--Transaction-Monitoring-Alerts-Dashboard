@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const ruleTypes: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
-const severities: Severity[] = ['LOW', 'MEDIUM', 'HIGH']
+const severities: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const initialForm: MonitoringRuleRequest = {
   name: '',

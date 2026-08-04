@@ -90,17 +90,12 @@ Then visit:
 
 ### Transactions
 - `GET /api/transactions` - List all transactions
-- `GET /api/transactions/{id}` - Get transaction details
 - `POST /api/transactions` - Create new transaction
-- `PUT /api/transactions/{id}` - Update transaction
-- `DELETE /api/transactions/{id}` - Delete transaction
 
 ### Alerts
 - `GET /api/alerts` - List all alerts
 - `GET /api/alerts/{id}` - Get alert details
-- `POST /api/alerts` - Create new alert
-- `PUT /api/alerts/{id}` - Update alert
-- `DELETE /api/alerts/{id}` - Delete alert
+- `PATCH /api/alerts/{id}/status` - Advance alert lifecycle status
 
 ### Rules
 - `GET /api/rules` - List all rules
@@ -108,6 +103,10 @@ Then visit:
 - `POST /api/rules` - Create new rule
 - `PUT /api/rules/{id}` - Update rule
 - `DELETE /api/rules/{id}` - Delete rule
+
+### SDN Screening
+- `GET /api/sdn/search?name={name}&threshold={threshold}` - Fuzzy search the loaded SDN list
+- `GET /api/sdn/count` - Get the number of loaded SDN entries
 
 ### Documentation
 - `GET /api-docs` - OpenAPI JSON specification
@@ -177,17 +176,15 @@ npm run lint
 
 ## 🗄️ Database Configuration
 
-The application uses MySQL with the following default configuration:
+The application uses MySQL. Shared defaults live in `src/main/resources/application.properties`, while credentials should be provided through environment variables or a local profile override.
 
 ```properties
-Database: transaction_management
-Username: root
-Password: n3u3da!
-Host: localhost
-Port: 3306
+DB_URL=jdbc:mysql://localhost:3306/transaction_management?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+DB_USERNAME=root
+DB_PASSWORD=your-local-password
 ```
 
-To change database credentials, edit `/src/main/resources/application.properties`
+For profile-based local setup, copy `src/main/resources/application-local.properties.example` to `src/main/resources/application-local.properties`, update the values for your machine, and run Spring Boot with the `local` profile.
 
 ## 🚀 Deployment
 
