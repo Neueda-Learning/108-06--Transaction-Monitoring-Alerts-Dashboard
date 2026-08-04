@@ -89,6 +89,8 @@ const TX_CREATE_PLACEHOLDERS = {
   payeeId: 'PAYEE-008',
   amount: '5000',
   currency: 'USD',
+}
+
 const DEFAULT_TX_FILTERS = {
   search: '',
   status: 'ALL' as const,
@@ -360,7 +362,7 @@ function App() {
     const createdTransaction = sortedTransactions[createdTransactionIndex]
     const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
     return [createdTransaction, ...withoutCreatedTransaction]
-  }, [alertsByTransaction, createdTxId, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [alertsByTransaction, createdTxId, transactions, appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -379,7 +381,28 @@ function App() {
 
   useEffect(() => {
     setCreatedTxId(null)
-  }, [txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
+
+  const applyTransactionFilters = () => {
+    setAppliedTxSearch(txSearch)
+    setAppliedTxStatusFilter(txStatusFilter)
+    setAppliedTxMinAmount(txMinAmount)
+    setAppliedTxMaxAmount(txMaxAmount)
+    setAppliedTxSortBy(txSortBy)
+  }
+
+  const resetTransactionFilters = () => {
+    setTxSearch(DEFAULT_TX_FILTERS.search)
+    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
+    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+  }
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
