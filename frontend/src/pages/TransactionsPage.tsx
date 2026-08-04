@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
-import { formatCurrency, formatDate, toIsoFromLocalDateTime } from '../utils/format'
+import { formatCurrency, formatDate, riskBucket, toIsoFromLocalDateTime } from '../utils/format'
 import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const initialFilters: TransactionFilters = {
@@ -235,6 +235,7 @@ export function TransactionsPage() {
                 <th>Account</th>
                 <th>Payee</th>
                 <th>Amount</th>
+                <th>Risk Score</th>
                 <th>Occurred At</th>
                 <th>Description</th>
               </tr>
@@ -246,13 +247,16 @@ export function TransactionsPage() {
                   <td>{transaction.accountId}</td>
                   <td>{transaction.payeeId}</td>
                   <td>{formatCurrency(Number(transaction.amount), transaction.currency)}</td>
+                  <td>
+                    <span className={`badge sev-${riskBucket(transaction.riskScore)}`}>{transaction.riskScore}</span>
+                  </td>
                   <td>{formatDate(transaction.occurredAt)}</td>
                   <td>{transaction.description || '--'}</td>
                 </tr>
               ))}
               {!visibleTransactions.length ? (
                 <tr>
-                  <td className="empty-row" colSpan={6}>
+                  <td className="empty-row" colSpan={7}>
                     No transactions found for the current filters.
                   </td>
                 </tr>

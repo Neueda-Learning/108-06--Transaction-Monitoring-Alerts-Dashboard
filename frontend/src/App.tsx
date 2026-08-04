@@ -44,7 +44,7 @@ import type {
   SimulationResult,
   TransactionResponse,
 } from './api/types'
-import { formatCurrency, formatDate } from './utils/format'
+import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
   | 'dashboard'
@@ -738,6 +738,7 @@ function App() {
                       <th>Debtor Account</th>
                       <th>Creditor Payee</th>
                       <th>Amount</th>
+                      <th>Risk Score</th>
                       <th>Rule Status</th>
                       <th>Action</th>
                     </tr>
@@ -750,6 +751,9 @@ function App() {
                         <td className="mono">{entry.accountId}</td>
                         <td className="mono">{entry.payeeId}</td>
                         <td>{formatCurrency(Number(entry.amount), entry.currency)}</td>
+                        <td>
+                          <span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span>
+                        </td>
                         <td>
                           <span className={`badge tx-${entry.derivedStatus.toLowerCase()}`}>{entry.derivedStatus}</span>
                         </td>
@@ -1058,6 +1062,7 @@ function App() {
                       <th>Account</th>
                       <th>Payee</th>
                       <th>Amount</th>
+                      <th>Risk Score</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -1068,6 +1073,7 @@ function App() {
                         <td>{entry.accountId}</td>
                         <td>{entry.payeeName ?? entry.payeeId}</td>
                         <td>{formatCurrency(entry.amount, entry.currency)}</td>
+                        <td><span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span></td>
                         <td><span className={`badge tx-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
                       </tr>
                     ))}
