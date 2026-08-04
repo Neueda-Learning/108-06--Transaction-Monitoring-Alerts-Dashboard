@@ -83,6 +83,14 @@ const API_DOCS = [
   { method: 'GET', path: '/api/sdn/count' },
 ]
 
+const DEFAULT_TX_FILTERS = {
+  search: '',
+  status: 'ALL' as const,
+  minAmount: '',
+  maxAmount: '',
+  sortBy: 'TIME_DESC' as const,
+}
+
 function getAlertCreatedToastMessage(count: number) {
   return count === 1 ? 'Alert created' : `${count} alerts created`
 }
@@ -107,11 +115,17 @@ function App() {
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
 
-  const [txSearch, setTxSearch] = useState('')
-  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>('ALL')
-  const [txMinAmount, setTxMinAmount] = useState('')
-  const [txMaxAmount, setTxMaxAmount] = useState('')
-  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>('TIME_DESC')
+  const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [txMinAmount, setTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [txMaxAmount, setTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
+
+  const [appliedTxSearch, setAppliedTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
 
   const [ruleForm, setRuleForm] = useState<MonitoringRuleRequest>({
@@ -317,27 +331,59 @@ function App() {
         return { ...entry, derivedStatus: status, linkedAlerts }
       })
       .filter((entry) => {
-        const searchValue = txSearch.trim().toLowerCase()
+        const searchValue = appliedTxSearch.trim().toLowerCase()
         const searchMatch =
           searchValue.length === 0 ||
           `${entry.id}`.includes(searchValue) ||
           entry.accountId.toLowerCase().includes(searchValue) ||
           entry.payeeId.toLowerCase().includes(searchValue)
-        const statusMatch = txStatusFilter === 'ALL' ? true : entry.derivedStatus === txStatusFilter
-        const minMatch = txMinAmount ? Number(entry.amount) >= Number(txMinAmount) : true
-        const maxMatch = txMaxAmount ? Number(entry.amount) <= Number(txMaxAmount) : true
+        const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.derivedStatus === appliedTxStatusFilter
+        const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
+        const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
         return searchMatch && statusMatch && minMatch && maxMatch
       })
       .sort((left, right) => {
-        if (txSortBy === 'AMOUNT_ASC') {
+        if (appliedTxSortBy === 'AMOUNT_ASC') {
           return Number(left.amount) - Number(right.amount)
         }
-        if (txSortBy === 'AMOUNT_DESC') {
+        if (appliedTxSortBy === 'AMOUNT_DESC') {
           return Number(right.amount) - Number(left.amount)
         }
         return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
       })
-  }, [alertsByTransaction, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [
+    alertsByTransaction,
+    transactions,
+    appliedTxSearch,
+    appliedTxStatusFilter,
+    appliedTxMinAmount,
+    appliedTxMaxAmount,
+    appliedTxSortBy,
+  ])
+
+  const applyTransactionFilters = () => {
+    setAppliedTxSearch(txSearch)
+    setAppliedTxStatusFilter(txStatusFilter)
+    setAppliedTxMinAmount(txMinAmount)
+    setAppliedTxMaxAmount(txMaxAmount)
+    setAppliedTxSortBy(txSortBy)
+    setSelectedTxId(null)
+  }
+
+  const resetTransactionFilters = () => {
+    setTxSearch(DEFAULT_TX_FILTERS.search)
+    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+
+    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
+    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setSelectedTxId(null)
+  }
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
@@ -765,6 +811,14 @@ function App() {
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
               </select>
+              <div className="tx-toolbar-actions">
+                <button type="button" className="primary" onClick={applyTransactionFilters}>
+                  Apply Filters
+                </button>
+                <button type="button" className="ghost" onClick={resetTransactionFilters}>
+                  Reset Filters
+                </button>
+              </div>
             </section>
 
             <section className="card">
