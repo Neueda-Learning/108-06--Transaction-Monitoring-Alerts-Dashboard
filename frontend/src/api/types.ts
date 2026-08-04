@@ -14,7 +14,7 @@ export interface TransactionResponse {
   amount: number
   currency: string
   country: string | null
-  status: TransactionStatus | null
+  status: TransactionStatus
   occurredAt: string | null
   description: string | null
 }
@@ -74,5 +74,17 @@ export interface MonitoringRuleRequest {
   velocityCount?: number | null
   velocityWindowMinutes?: number | null
   dailyLimit?: number | null
+}
+
+export interface SimulatorScenario {
+  scenario: string
+  description: string
+}
+
+export interface SimulationResult {
+  scenario: string
+  description: string
+  transactions: TransactionResponse[]
+  alerts: AlertResponse[]
 }
 
