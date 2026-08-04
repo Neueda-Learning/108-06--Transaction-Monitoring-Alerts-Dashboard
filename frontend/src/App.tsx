@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
@@ -35,6 +35,7 @@ import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
+import { Modal } from './components/Modal'
 import type {
   AlertResponse,
   AlertStatus,
@@ -83,6 +84,11 @@ const API_DOCS = [
   { method: 'GET', path: '/api/sdn/count' },
 ]
 
+const TX_CREATE_PLACEHOLDERS = {
+  accountId: 'ACC-001',
+  payeeId: 'PAYEE-008',
+  amount: '5000',
+  currency: 'USD',
 const DEFAULT_TX_FILTERS = {
   search: '',
   status: 'ALL' as const,
@@ -107,9 +113,6 @@ function App() {
 
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
-  const [alertWorkflowTab, setAlertWorkflowTab] = useState<
-    'ALL' | 'OPEN' | 'ACKNOWLEDGED' | 'INVESTIGATING' | 'CLOSED_TRUE' | 'CLOSED_FALSE'
-  >('ALL')
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
   const [alertNote, setAlertNote] = useState('')
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
@@ -127,6 +130,8 @@ function App() {
   const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
+  const [createdTxId, setCreatedTxId] = useState<number | null>(null)
+  const ledgerTableWrapRef = useRef<HTMLDivElement | null>(null)
 
   const [ruleForm, setRuleForm] = useState<MonitoringRuleRequest>({
     name: '',
@@ -138,10 +143,10 @@ function App() {
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
 
   const [transactionForm, setTransactionForm] = useState({
-    accountId: 'ACC-001',
-    payeeId: 'PAYEE-001',
-    amount: 500,
-    currency: 'GBP',
+    accountId: '',
+    payeeId: '',
+    amount: '',
+    currency: '',
     description: '',
   })
 
@@ -233,19 +238,9 @@ function App() {
     return alerts.filter((entry) => {
       const statusMatch = alertFilterStatus ? entry.status === alertFilterStatus : true
       const severityMatch = alertFilterSeverity ? entry.severity === alertFilterSeverity : true
-      let workflowMatch = true
-      if (alertWorkflowTab !== 'ALL') {
-        if (alertWorkflowTab === 'CLOSED_TRUE') {
-          workflowMatch = entry.status === 'CLOSED'
-        } else if (alertWorkflowTab === 'CLOSED_FALSE') {
-          workflowMatch = entry.status === 'DISMISSED'
-        } else {
-          workflowMatch = entry.status === alertWorkflowTab
-        }
-      }
-      return statusMatch && severityMatch && workflowMatch
+      return statusMatch && severityMatch
     })
-  }, [alertFilterSeverity, alertFilterStatus, alertWorkflowTab, alerts])
+  }, [alertFilterSeverity, alertFilterStatus, alerts])
 
   const selectedAlert = useMemo(
     () => alerts.find((entry) => entry.id === selectedAlertId) ?? null,
@@ -318,7 +313,7 @@ function App() {
   )
 
   const derivedTransactions = useMemo(() => {
-    return transactions
+    const sortedTransactions = transactions
       .map((entry) => {
         const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
         let status: 'CLEAN' | 'FLAGGED' | 'BLOCKED' = 'CLEAN'
@@ -351,39 +346,40 @@ function App() {
         }
         return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
       })
-  }, [
-    alertsByTransaction,
-    transactions,
-    appliedTxSearch,
-    appliedTxStatusFilter,
-    appliedTxMinAmount,
-    appliedTxMaxAmount,
-    appliedTxSortBy,
-  ])
 
-  const applyTransactionFilters = () => {
-    setAppliedTxSearch(txSearch)
-    setAppliedTxStatusFilter(txStatusFilter)
-    setAppliedTxMinAmount(txMinAmount)
-    setAppliedTxMaxAmount(txMaxAmount)
-    setAppliedTxSortBy(txSortBy)
-    setSelectedTxId(null)
-  }
+    if (createdTxId === null) {
+      return sortedTransactions
+    }
 
-  const resetTransactionFilters = () => {
-    setTxSearch(DEFAULT_TX_FILTERS.search)
-    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
-    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
-    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
-    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    const createdTransactionIndex = sortedTransactions.findIndex((entry) => entry.id === createdTxId)
 
-    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
-    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
-    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
-    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
-    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
-    setSelectedTxId(null)
-  }
+    if (createdTransactionIndex <= 0) {
+      return sortedTransactions
+    }
+
+    const createdTransaction = sortedTransactions[createdTransactionIndex]
+    const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
+    return [createdTransaction, ...withoutCreatedTransaction]
+  }, [alertsByTransaction, createdTxId, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+
+  useEffect(() => {
+    if (createdTxId === null || activeTab !== 'transactions') {
+      return
+    }
+
+    const createdRow = document.getElementById(`ledger-transaction-row-${createdTxId}`)
+
+    if (createdRow instanceof HTMLElement) {
+      createdRow.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+
+    ledgerTableWrapRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [activeTab, createdTxId, derivedTransactions])
+
+  useEffect(() => {
+    setCreatedTxId(null)
+  }, [txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
@@ -394,7 +390,6 @@ function App() {
     event.preventDefault()
     setError(null)
     try {
-      const existingAlertIds = new Set(alerts.map((entry) => entry.id))
       const createdTransaction = await createTransaction({
         accountId: transactionForm.accountId,
         payeeId: transactionForm.payeeId,
@@ -402,15 +397,20 @@ function App() {
         currency: transactionForm.currency.toUpperCase(),
         description: transactionForm.description || null,
       })
-      const refreshedData = await loadAll()
-      showSuccessToast('Transaction created')
-      const createdAlerts =
-        refreshedData?.alerts.filter(
-          (entry) => entry.transactionId === createdTransaction.id && !existingAlertIds.has(entry.id),
-        ) ?? []
-      if (createdAlerts.length > 0) {
-        showSuccessToast(getAlertCreatedToastMessage(createdAlerts.length))
-      }
+
+      setTransactions((prev) => [createdTransaction, ...prev.filter((entry) => entry.id !== createdTransaction.id)])
+      setCreatedTxId(createdTransaction.id)
+
+      setTransactionForm({
+        accountId: '',
+        payeeId: '',
+        amount: '',
+        currency: '',
+        description: '',
+      })
+
+      // Keep dashboard metrics consistent while the new row is shown immediately in the ledger.
+      void loadAll()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create transaction')
     }
@@ -746,6 +746,7 @@ function App() {
                 <input
                   value={transactionForm.accountId}
                   onChange={(event) => setTransactionForm((prev) => ({ ...prev, accountId: event.target.value }))}
+                  placeholder={TX_CREATE_PLACEHOLDERS.accountId}
                   required
                 />
               </label>
@@ -754,6 +755,7 @@ function App() {
                 <input
                   value={transactionForm.payeeId}
                   onChange={(event) => setTransactionForm((prev) => ({ ...prev, payeeId: event.target.value }))}
+                  placeholder={TX_CREATE_PLACEHOLDERS.payeeId}
                   required
                 />
               </label>
@@ -764,7 +766,8 @@ function App() {
                   step="0.01"
                   min="0.01"
                   value={transactionForm.amount}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, amount: Number(event.target.value) }))}
+                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, amount: event.target.value }))}
+                  placeholder={TX_CREATE_PLACEHOLDERS.amount}
                   required
                 />
               </label>
@@ -774,6 +777,7 @@ function App() {
                   value={transactionForm.currency}
                   maxLength={3}
                   onChange={(event) => setTransactionForm((prev) => ({ ...prev, currency: event.target.value }))}
+                  placeholder={TX_CREATE_PLACEHOLDERS.currency}
                   required
                 />
               </label>
@@ -823,7 +827,7 @@ function App() {
 
             <section className="card">
               <h3>Transactions Ledger ({derivedTransactions.length})</h3>
-              <div className="table-wrap">
+              <div ref={ledgerTableWrapRef} className="table-wrap">
                 <table>
                   <thead>
                     <tr>
@@ -839,7 +843,11 @@ function App() {
                   </thead>
                   <tbody>
                     {derivedTransactions.map((entry) => (
-                      <tr key={entry.id}>
+                      <tr
+                        key={entry.id}
+                        id={`ledger-transaction-row-${entry.id}`}
+                        className={entry.id === createdTxId ? 'new-transaction-row' : undefined}
+                      >
                         <td className="mono">TX-{entry.id}</td>
                         <td className="mono">{formatDate(entry.occurredAt)}</td>
                         <td className="mono">{entry.accountId}</td>
@@ -864,8 +872,8 @@ function App() {
             </section>
 
             {selectedTx ? (
-              <section className="card">
-                <h3>Transaction Detail - TX-{selectedTx.id}</h3>
+              <Modal isOpen={selectedTx !== null} onClose={() => setSelectedTxId(null)} titleId="transaction-modal-title">
+                <h3 id="transaction-modal-title">Transaction Detail - TX-{selectedTx.id}</h3>
                 <p className="muted">Rule evaluation breakdown and linked alerts for investigation context.</p>
                 <div className="split-grid">
                   <div>
@@ -890,32 +898,13 @@ function App() {
                     )}
                   </div>
                 </div>
-              </section>
+              </Modal>
             ) : null}
           </div>
         ) : null}
 
         {activeTab === 'alerts' ? (
           <div className="panel-stack">
-            <section className="card workflow-tabs">
-              {[
-                ['ALL', 'ALL'],
-                ['OPEN', 'OPEN'],
-                ['ACKNOWLEDGED', 'ACKNOWLEDGED'],
-                ['INVESTIGATING', 'INVESTIGATING'],
-                ['CLOSED_TRUE', 'CLOSED_TRUE_POSITIVE'],
-                ['CLOSED_FALSE', 'CLOSED_FALSE_POSITIVE'],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={alertWorkflowTab === value ? 'tab-chip active' : 'tab-chip'}
-                  onClick={() => setAlertWorkflowTab(value as typeof alertWorkflowTab)}
-                >
-                  {label}
-                </button>
-              ))}
-            </section>
 
             <section className="card form-grid">
               <h3>Filter Alerts</h3>
@@ -960,44 +949,46 @@ function App() {
             </section>
 
             {selectedAlert ? (
-              <form className="card form-grid" onSubmit={moveAlertStatus}>
-                <h3>Alert Investigation - AL-{selectedAlert.id}</h3>
-                <p className="muted span-2">{selectedAlert.message}</p>
-                <label>
-                  Next Status
-                  <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AlertStatus)}>
-                    {STATUSES.filter((entry) => entry !== 'OPEN').map((entry) => (
-                      <option key={entry} value={entry}>{entry}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="span-2">
-                  Analyst Notes
-                  <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
-                </label>
-                <button className="primary" type="submit">Update Alert Status</button>
+              <Modal isOpen={selectedAlert !== null} onClose={() => setSelectedAlertId(null)} titleId="alert-investigation-modal-title">
+                <form className="form-grid" onSubmit={moveAlertStatus}>
+                  <h3 id="alert-investigation-modal-title">Alert Investigation - AL-{selectedAlert.id}</h3>
+                  <p className="muted span-2">{selectedAlert.message}</p>
+                  <label>
+                    Next Status
+                    <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AlertStatus)}>
+                      {STATUSES.filter((entry) => entry !== 'OPEN').map((entry) => (
+                        <option key={entry} value={entry}>{entry}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="span-2">
+                    Analyst Notes
+                    <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
+                  </label>
+                  <button className="primary" type="submit">Update Alert Status</button>
 
-                <div className="span-2 timeline-wrap">
-                  <h4>Audit Trail</h4>
-                  <ul>
-                    <li>Created: {formatDate(selectedAlert.createdAt)}</li>
-                    <li>Acknowledged: {formatDate(selectedAlert.acknowledgedAt)}</li>
-                    <li>Investigating: {formatDate(selectedAlert.investigatingAt)}</li>
-                    <li>Closed: {formatDate(selectedAlert.closedAt)}</li>
-                    <li>Dismissed: {formatDate(selectedAlert.dismissedAt)}</li>
-                  </ul>
-                </div>
+                  <div className="span-2 timeline-wrap">
+                    <h4>Audit Trail</h4>
+                    <ul>
+                      <li>Created: {formatDate(selectedAlert.createdAt)}</li>
+                      <li>Acknowledged: {formatDate(selectedAlert.acknowledgedAt)}</li>
+                      <li>Investigating: {formatDate(selectedAlert.investigatingAt)}</li>
+                      <li>Closed: {formatDate(selectedAlert.closedAt)}</li>
+                      <li>Dismissed: {formatDate(selectedAlert.dismissedAt)}</li>
+                    </ul>
+                  </div>
 
-                <div className="span-2">
-                  <h4>Notes History</h4>
-                  <ul>
-                    {(notesByAlertId[selectedAlert.id] ?? []).map((note, index) => (
-                      <li key={`${selectedAlert.id}-note-${index}`}>{note}</li>
-                    ))}
-                    {!notesByAlertId[selectedAlert.id]?.length ? <li className="muted">No notes added yet.</li> : null}
-                  </ul>
-                </div>
-              </form>
+                  <div className="span-2">
+                    <h4>Notes History</h4>
+                    <ul>
+                      {(notesByAlertId[selectedAlert.id] ?? []).map((note, index) => (
+                        <li key={`${selectedAlert.id}-note-${index}`}>{note}</li>
+                      ))}
+                      {!notesByAlertId[selectedAlert.id]?.length ? <li className="muted">No notes added yet.</li> : null}
+                    </ul>
+                  </div>
+                </form>
+              </Modal>
             ) : null}
           </div>
         ) : null}

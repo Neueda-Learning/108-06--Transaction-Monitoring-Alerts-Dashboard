@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { toast } from 'react-hot-toast'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
@@ -16,6 +16,34 @@ const initialFilters: TransactionFilters = {
   to: '',
 }
 
+function createEmptyCreateForm() {
+  return {
+    accountId: '',
+    payeeId: '',
+    amount: '',
+    currency: '',
+    occurredAt: '',
+    description: '',
+  }
+}
+
+const createPlaceholders = {
+  accountId: 'ACC-001',
+  payeeId: 'PAYEE-008',
+  amount: '5000',
+  currency: 'USD',
+}
+
+function prioritizeCreatedTransaction(
+  loadedTransactions: TransactionResponse[],
+  createdTransaction: TransactionResponse,
+) {
+  const matchingTransaction = loadedTransactions.find((transaction) => transaction.id === createdTransaction.id)
+  const remainingTransactions = loadedTransactions.filter((transaction) => transaction.id !== createdTransaction.id)
+
+  return [matchingTransaction ?? createdTransaction, ...remainingTransactions]
+}
+
 export function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilters>(initialFilters)
   const [fromLocal, setFromLocal] = useState('')
@@ -25,16 +53,24 @@ export function TransactionsPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const pageSize = 8
+  const [createdTransactionId, setCreatedTransactionId] = useState<number | null>(null)
+  const resultsRef = useRef<HTMLElement | null>(null)
+  const [createFormKey, setCreateFormKey] = useState(0)
 
-  const [accountId, setAccountId] = useState('ACC-001')
-  const [payeeId, setPayeeId] = useState('PAYEE-001')
-  const [amount, setAmount] = useState('500')
-  const [currency, setCurrency] = useState('USD')
-  const [occurredAt, setOccurredAt] = useState('')
-  const [description, setDescription] = useState('')
+  const [createForm, setCreateForm] = useState(() => createEmptyCreateForm())
 
-  const loadTransactions = useCallback(async (activeFilters = filters) => {
+  const resetCreateForm = useCallback(() => {
+    setCreateForm(createEmptyCreateForm())
+    setCreateFormKey((prev) => prev + 1)
+  }, [])
+
+  const resetFilters = useCallback(() => {
+    setFilters(initialFilters)
+    setFromLocal('')
+    setToLocal('')
+  }, [])
+
+  const loadTransactions = useCallback(async (activeFilters: TransactionFilters = initialFilters) => {
     setLoading(true)
     setError(null)
     try {
@@ -43,29 +79,34 @@ export function TransactionsPage() {
       return result
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load transactions')
-      return null
+      return []
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [])
 
   useEffect(() => {
     void loadTransactions(initialFilters)
   }, [loadTransactions])
 
-  const filteredTransactions = useMemo(() => {
-    return filterItemsByText(transactions, search, (transaction) => [transaction.accountId, transaction.payeeId, transaction.description, transaction.currency, transaction.id])
-  }, [transactions, search])
-
-  const pageCount = useMemo(() => getPageCount(filteredTransactions.length, pageSize), [filteredTransactions.length])
-  const visibleTransactions = useMemo(() => paginateItems(filteredTransactions, page, pageSize), [filteredTransactions, page])
-
   useEffect(() => {
-    setPage(1)
-  }, [search, filters])
+    if (createdTransactionId === null) {
+      return
+    }
+
+    const createdRow = document.getElementById(`transaction-row-${createdTransactionId}`)
+
+    if (createdRow instanceof HTMLElement) {
+      createdRow.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+
+    resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [createdTransactionId, transactions])
 
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
+    setCreatedTransactionId(null)
     const queryFilters: TransactionFilters = {
       ...filters,
       from: toIsoFromLocalDateTime(fromLocal) ?? '',
@@ -81,22 +122,20 @@ export function TransactionsPage() {
 
     try {
       const createdTransaction = await createTransaction({
-        accountId,
-        payeeId,
-        amount: Number(amount),
-        currency,
-        occurredAt: toIsoFromLocalDateTime(occurredAt),
-        description: description || null,
+        accountId: createForm.accountId,
+        payeeId: createForm.payeeId,
+        amount: Number(createForm.amount),
+        currency: createForm.currency,
+        occurredAt: toIsoFromLocalDateTime(createForm.occurredAt),
+        description: createForm.description || null,
       })
-      setDescription('')
-      setOccurredAt('')
-      const refreshedTransactions = await loadTransactions(filters)
-      toast.success('Transaction created')
-      const createdTransactionStatus =
-        refreshedTransactions?.find((entry) => entry.id === createdTransaction.id)?.status ?? createdTransaction.status
-      if (createdTransactionStatus === 'FLAGGED' || createdTransactionStatus === 'BLOCKED') {
-        toast.success('Alert created')
-      }
+
+      resetCreateForm()
+      resetFilters()
+
+      const refreshedTransactions = await loadTransactions(initialFilters)
+      setTransactions(prioritizeCreatedTransaction(refreshedTransactions, createdTransaction))
+      setCreatedTransactionId(createdTransaction.id)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create transaction')
     }
@@ -110,14 +149,34 @@ export function TransactionsPage() {
 
       <section className="panel">
         <h3>Create Transaction</h3>
-        <form className="grid-form" onSubmit={onCreateSubmit}>
+        <form key={createFormKey} className="grid-form" autoComplete="off" onSubmit={onCreateSubmit}>
           <label>
             Account ID
-            <input value={accountId} onChange={(event) => setAccountId(event.target.value)} required />
+            <input
+              id="tx-create-account-id"
+              name="tx-create-account-id"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={createForm.accountId ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, accountId: event.target.value }))}
+              placeholder={createPlaceholders.accountId}
+              required
+            />
           </label>
           <label>
             Payee ID
-            <input value={payeeId} onChange={(event) => setPayeeId(event.target.value)} required />
+            <input
+              id="tx-create-payee-id"
+              name="tx-create-payee-id"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              value={createForm.payeeId ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, payeeId: event.target.value }))}
+              placeholder={createPlaceholders.payeeId}
+              required
+            />
           </label>
           <label>
             Amount
@@ -125,28 +184,47 @@ export function TransactionsPage() {
               type="number"
               min="0.01"
               step="0.01"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
+              id="tx-create-amount"
+              name="tx-create-amount"
+              autoComplete="off"
+              value={createForm.amount ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, amount: event.target.value }))}
+              placeholder={createPlaceholders.amount}
               required
             />
           </label>
           <label>
             Currency
-            <input value={currency} onChange={(event) => setCurrency(event.target.value)} required maxLength={3} />
+            <input
+              id="tx-create-currency"
+              name="tx-create-currency"
+              autoComplete="off"
+              value={createForm.currency ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, currency: event.target.value }))}
+              placeholder={createPlaceholders.currency}
+              required
+              maxLength={3}
+            />
           </label>
           <label>
             Occurred At
             <input
               type="datetime-local"
-              value={occurredAt}
-              onChange={(event) => setOccurredAt(event.target.value)}
+              id="tx-create-occurred-at"
+              name="tx-create-occurred-at"
+              autoComplete="off"
+              value={createForm.occurredAt ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, occurredAt: event.target.value }))}
             />
           </label>
           <label className="span-2">
             Description
             <input
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              id="tx-create-description"
+              name="tx-create-description"
+              autoComplete="off"
+              value={createForm.description ?? ''}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
               placeholder="Optional context"
             />
           </label>
@@ -221,9 +299,8 @@ export function TransactionsPage() {
               type="button"
               className="ghost"
               onClick={() => {
-                setFilters(initialFilters)
-                setFromLocal('')
-                setToLocal('')
+                setCreatedTransactionId(null)
+                resetFilters()
                 void loadTransactions(initialFilters)
               }}
             >
@@ -233,9 +310,8 @@ export function TransactionsPage() {
         </form>
       </section>
 
-      <section className="panel">
-        <h3>Transaction Results ({filteredTransactions.length})</h3>
-        {loading ? <p>Loading transactions...</p> : null}
+      <section ref={resultsRef} className="panel">
+        <h3>Transaction Results ({transactions.length})</h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -250,8 +326,12 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleTransactions.map((transaction) => (
-                <tr key={transaction.id}>
+              {transactions.map((transaction) => (
+                <tr
+                  key={transaction.id}
+                  id={`transaction-row-${transaction.id}`}
+                  className={transaction.id === createdTransactionId ? 'new-transaction-row' : undefined}
+                >
                   <td>#{transaction.id}</td>
                   <td>{transaction.accountId}</td>
                   <td>{transaction.payeeId}</td>

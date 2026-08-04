@@ -15,9 +15,11 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -171,6 +173,15 @@ class TransactionMonitoringTests {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(objectMapper.writeValueAsString(new StatusUpdate("ACKNOWLEDGED", "should fail"))))
 			.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void allowsFrontendCorsOriginForApiRequests() throws Exception {
+		mockMvc.perform(options("/api/transactions")
+				.header("Origin", "http://localhost:5173")
+				.header("Access-Control-Request-Method", "GET"))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"));
 	}
 
 	private void createTransaction(String accountId, String payeeId, int amount, String occurredAt, String description) throws Exception {
