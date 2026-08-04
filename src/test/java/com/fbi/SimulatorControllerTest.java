@@ -52,6 +52,7 @@ class SimulatorControllerTest {
             .andExpect(jsonPath("$.scenario").value("clean"))
             .andExpect(jsonPath("$.transactions.length()").value(1))
             .andExpect(jsonPath("$.transactions[0].status").value("APPROVED"))
+            .andExpect(jsonPath("$.transactions[0].riskScore").value(0))
             .andExpect(jsonPath("$.alerts.length()").value(0));
     }
 
@@ -61,6 +62,9 @@ class SimulatorControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.transactions.length()").value(1))
             .andExpect(jsonPath("$.transactions[0].status").value("FLAGGED"))
+            // The single transaction is also to a brand-new payee, so both
+            // AMOUNT_THRESHOLD (HIGH=60) and NEW_PAYEE (MEDIUM=35) alerts fire: 60+35=95.
+            .andExpect(jsonPath("$.transactions[0].riskScore").value(95))
             .andExpect(jsonPath("$.alerts[?(@.ruleType == 'AMOUNT_THRESHOLD')]").isNotEmpty());
     }
 
@@ -79,6 +83,7 @@ class SimulatorControllerTest {
         mockMvc.perform(post("/api/simulator/scenarios/{scenario}", "new-payee"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.transactions.length()").value(1))
+            .andExpect(jsonPath("$.transactions[0].riskScore").value(35))
             .andExpect(jsonPath("$.alerts[0].ruleType").value("NEW_PAYEE"));
     }
 
@@ -98,6 +103,7 @@ class SimulatorControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.transactions.length()").value(1))
             .andExpect(jsonPath("$.transactions[0].status").value("BLOCKED"))
+            .andExpect(jsonPath("$.transactions[0].riskScore").value(100))
             .andExpect(jsonPath("$.alerts[0].ruleType").value("SDN_MATCH"))
             .andExpect(jsonPath("$.alerts[0].severity").value("CRITICAL"));
     }
