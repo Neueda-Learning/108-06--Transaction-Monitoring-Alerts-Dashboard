@@ -28,20 +28,28 @@ describe('TransactionsPage', () => {
       id: 1,
       accountId: 'ACC-OLD',
       payeeId: 'PAYEE-OLD',
+      payeeName: 'Old Payee',
       amount: 125,
       currency: 'USD',
       occurredAt: '2026-08-04T10:00:00Z',
       description: 'Existing transaction',
+      country: 'US',
+      status: 'APPROVED' as const,
+      riskScore: 0,
     }
 
     const createdTransaction = {
       id: 99,
       accountId: 'ACC-NEW',
       payeeId: 'PAYEE-NEW',
+      payeeName: 'New Payee',
       amount: 500,
       currency: 'EUR',
       occurredAt: '2026-08-04T12:00:00Z',
       description: 'Freshly added transaction',
+      country: 'FR',
+      status: 'APPROVED' as const,
+      riskScore: 0,
     }
 
     mockedGetTransactions

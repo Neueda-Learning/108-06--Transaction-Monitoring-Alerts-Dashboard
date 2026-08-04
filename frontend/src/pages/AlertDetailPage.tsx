@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { getAlertById, updateAlertStatus } from '../api/alerts'
-import type { AlertResponse, AlertStatus } from '../api/types'
+import { getAlertById, investigateWithAi, updateAlertStatus } from '../api/alerts'
+import type { AiInvestigationResponse, AlertResponse, AlertStatus } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatDate } from '../utils/format'
@@ -18,6 +18,9 @@ export function AlertDetailPage() {
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [aiResult, setAiResult] = useState<AiInvestigationResponse | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const loadAlert = useCallback(async () => {
     if (!alertId) {
@@ -77,6 +80,24 @@ export function AlertDetailPage() {
       setError(requestError instanceof Error ? requestError.message : 'Failed to update alert')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const onInvestigateWithAi = async () => {
+    if (!alert) {
+      return
+    }
+
+    setAiError(null)
+    setAiLoading(true)
+
+    try {
+      const result = await investigateWithAi(alert.id)
+      setAiResult(result)
+    } catch (requestError) {
+      setAiError(requestError instanceof Error ? requestError.message : 'Failed to generate AI investigation')
+    } finally {
+      setAiLoading(false)
     }
   }
 
@@ -165,6 +186,26 @@ export function AlertDetailPage() {
           <li>Closed: {formatDate(alert?.closedAt)}</li>
           <li>Dismissed: {formatDate(alert?.dismissedAt)}</li>
         </ul>
+      </section>
+
+      <section className="panel">
+        <h3>AI Investigation</h3>
+        <button type="button" onClick={onInvestigateWithAi} disabled={aiLoading || !alert}>
+          {aiLoading ? 'Investigating...' : 'Investigate with AI'}
+        </button>
+        {aiError ? <p className="error-text">{aiError}</p> : null}
+        {aiResult ? (
+          <dl className="details-grid">
+            <dt>Risk Level</dt>
+            <dd>{aiResult.riskLevel}</dd>
+            <dt>Summary</dt>
+            <dd>{aiResult.summary}</dd>
+            <dt>Recommendation</dt>
+            <dd>{aiResult.recommendation}</dd>
+            <dt>Model</dt>
+            <dd>{aiResult.model}</dd>
+          </dl>
+        ) : null}
       </section>
     </div>
   )

@@ -30,13 +30,14 @@ import {
   YAxis,
 } from 'recharts'
 import { toast } from 'react-hot-toast'
-import { getAlerts, updateAlertStatus } from './api/alerts'
+import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import { Modal } from './components/Modal'
 import type {
+  AiInvestigationResponse,
   AlertResponse,
   AlertStatus,
   MonitoringRuleRequest,
@@ -89,6 +90,8 @@ const TX_CREATE_PLACEHOLDERS = {
   payeeId: 'PAYEE-008',
   amount: '5000',
   currency: 'USD',
+}
+
 const DEFAULT_TX_FILTERS = {
   search: '',
   status: 'ALL' as const,
@@ -117,6 +120,9 @@ function App() {
   const [alertNote, setAlertNote] = useState('')
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
+  const [aiResult, setAiResult] = useState<AiInvestigationResponse | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
   const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
@@ -360,7 +366,7 @@ function App() {
     const createdTransaction = sortedTransactions[createdTransactionIndex]
     const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
     return [createdTransaction, ...withoutCreatedTransaction]
-  }, [alertsByTransaction, createdTxId, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [alertsByTransaction, createdTxId, transactions, appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -379,7 +385,34 @@ function App() {
 
   useEffect(() => {
     setCreatedTxId(null)
-  }, [txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
+
+  useEffect(() => {
+    setAiResult(null)
+    setAiError(null)
+    setAiLoading(false)
+  }, [selectedAlertId])
+
+  const applyTransactionFilters = () => {
+    setAppliedTxSearch(txSearch)
+    setAppliedTxStatusFilter(txStatusFilter)
+    setAppliedTxMinAmount(txMinAmount)
+    setAppliedTxMaxAmount(txMaxAmount)
+    setAppliedTxSortBy(txSortBy)
+  }
+
+  const resetTransactionFilters = () => {
+    setTxSearch(DEFAULT_TX_FILTERS.search)
+    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
+    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+  }
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
@@ -434,6 +467,24 @@ function App() {
       await loadAll()
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Failed to update alert')
+    }
+  }
+
+  const onInvestigateWithAi = async () => {
+    if (!selectedAlert) {
+      return
+    }
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const result = await investigateWithAi(selectedAlert.id)
+      setAiResult(result)
+    } catch (aiRequestError) {
+      const message = aiRequestError instanceof Error ? aiRequestError.message : 'AI investigation failed'
+      setAiError(message)
+      toast.error(message)
+    } finally {
+      setAiLoading(false)
     }
   }
 
@@ -966,6 +1017,31 @@ function App() {
                     <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
                   </label>
                   <button className="primary" type="submit">Update Alert Status</button>
+
+                  <div className="span-2 timeline-wrap">
+                    <div className="button-row">
+                      <button type="button" className="ghost" onClick={onInvestigateWithAi} disabled={aiLoading}>
+                        {aiLoading ? 'Investigating...' : 'Investigate with AI'}
+                      </button>
+                    </div>
+                    {aiError ? <p className="error-text">{aiError}</p> : null}
+                    {aiResult ? (
+                      <div className="ai-result">
+                        <h4>AI Investigation Result</h4>
+                        <p><strong>Risk Level:</strong> {aiResult.riskLevel}</p>
+                        <p><strong>Summary:</strong> {aiResult.summary}</p>
+                        <p><strong>Recommendation:</strong> {aiResult.recommendation}</p>
+                        {aiResult.keyFindings.length ? (
+                          <ul>
+                            {aiResult.keyFindings.map((finding, index) => (
+                              <li key={`ai-finding-${index}`}>{finding}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <p className="muted mono">Model: {aiResult.model}</p>
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div className="span-2 timeline-wrap">
                     <h4>Audit Trail</h4>

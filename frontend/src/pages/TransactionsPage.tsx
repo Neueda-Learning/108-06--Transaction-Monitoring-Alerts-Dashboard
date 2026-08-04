@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { toast } from 'react-hot-toast'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -33,6 +32,8 @@ const createPlaceholders = {
   amount: '5000',
   currency: 'USD',
 }
+
+const PAGE_SIZE = 10
 
 function prioritizeCreatedTransaction(
   loadedTransactions: TransactionResponse[],
@@ -107,6 +108,7 @@ export function TransactionsPage() {
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
     setCreatedTransactionId(null)
+    setPage(1)
     const queryFilters: TransactionFilters = {
       ...filters,
       from: toIsoFromLocalDateTime(fromLocal) ?? '',
@@ -115,6 +117,19 @@ export function TransactionsPage() {
     setFilters(queryFilters)
     void loadTransactions(queryFilters)
   }
+
+  const filteredTransactions = useMemo(
+    () =>
+      filterItemsByText(transactions, search, (transaction) => [
+        transaction.accountId,
+        transaction.payeeId,
+        transaction.description,
+      ]),
+    [transactions, search],
+  )
+
+  const pageCount = getPageCount(filteredTransactions.length, PAGE_SIZE)
+  const visibleTransactions = paginateItems(filteredTransactions, page, PAGE_SIZE)
 
   const onCreateSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -239,7 +254,10 @@ export function TransactionsPage() {
             Search
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setPage(1)
+              }}
               placeholder="Search by account, payee, or description"
             />
           </label>
@@ -326,7 +344,7 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((transaction) => (
+              {visibleTransactions.map((transaction) => (
                 <tr
                   key={transaction.id}
                   id={`transaction-row-${transaction.id}`}
@@ -353,7 +371,7 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
-        {filteredTransactions.length > pageSize ? (
+        {filteredTransactions.length > PAGE_SIZE ? (
           <div className="button-row">
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
               Previous

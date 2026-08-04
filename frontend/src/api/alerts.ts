@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { AlertResponse, AlertStatus, AlertStatusUpdateRequest, Severity } from './types'
+import type { AiInvestigationResponse, AlertResponse, AlertStatus, AlertStatusUpdateRequest, Severity } from './types'
 
 export interface AlertFilters {
   status?: AlertStatus | ''
@@ -18,6 +18,12 @@ export function updateAlertStatus(id: number, payload: AlertStatusUpdateRequest)
   return apiRequest<AlertResponse>(`/api/alerts/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  })
+}
+
+export function investigateWithAi(id: number) {
+  return apiRequest<AiInvestigationResponse>(`/api/alerts/${id}/ai-investigate`, {
+    method: 'POST',
   })
 }
 
