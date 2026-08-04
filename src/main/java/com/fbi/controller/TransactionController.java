@@ -2,6 +2,7 @@ package com.fbi.controller;
 
 import com.fbi.dto.TransactionCreateRequest;
 import com.fbi.dto.TransactionResponse;
+import com.fbi.dto.TransactionRuleResult;
 import com.fbi.service.ApiMapper;
 import com.fbi.service.TransactionService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PathVariable;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -30,6 +32,18 @@ public class TransactionController {
     @Operation(summary = "Create a transaction and run monitoring rules")
     public TransactionResponse create(@RequestBody @Valid TransactionCreateRequest request) {
         return ApiMapper.toResponse(transactionService.createTransaction(request));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get transaction details")
+    public TransactionResponse getById(@PathVariable Long id) {
+        return ApiMapper.toResponse(transactionService.getById(id));
+    }
+
+    @GetMapping("/{id}/rule-results")
+    @Operation(summary = "Get rule evaluation results for a transaction")
+    public List<TransactionRuleResult> getRuleResults(@PathVariable Long id) {
+        return transactionService.getRuleResults(id);
     }
 
     @GetMapping
@@ -48,4 +62,3 @@ public class TransactionController {
             .toList();
     }
 }
-

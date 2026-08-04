@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { toast } from 'react-hot-toast'
 import { createRule, deleteRule, getRules, updateRule } from '../api/rules'
 import type { MonitoringRuleRequest, MonitoringRuleResponse, RuleType, Severity } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { StatusBadge } from '../components/StatusBadge'
+import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const ruleTypes: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
-const severities: Severity[] = ['LOW', 'MEDIUM', 'HIGH']
+const severities: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const initialForm: MonitoringRuleRequest = {
   name: '',
@@ -23,8 +25,11 @@ export function RulesPage() {
   const [rules, setRules] = useState<MonitoringRuleResponse[]>([])
   const [form, setForm] = useState<MonitoringRuleRequest>(initialForm)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pageSize = 8
 
   const loadRules = async () => {
     setLoading(true)
@@ -42,6 +47,17 @@ export function RulesPage() {
   useEffect(() => {
     void loadRules()
   }, [])
+
+  const filteredRules = useMemo(() => {
+    return filterItemsByText(rules, search, (rule) => [rule.name, rule.type, rule.severity, rule.active ? 'active' : 'inactive'])
+  }, [rules, search])
+
+  const pageCount = useMemo(() => getPageCount(filteredRules.length, pageSize), [filteredRules.length])
+  const visibleRules = useMemo(() => paginateItems(filteredRules, page, pageSize), [filteredRules, page])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search])
 
   const payload = useMemo(() => {
     const basePayload: MonitoringRuleRequest = {
@@ -72,6 +88,7 @@ export function RulesPage() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
+    const isCreatingRule = editingRuleId === null
 
     try {
       if (editingRuleId) {
@@ -82,6 +99,7 @@ export function RulesPage() {
       setForm(initialForm)
       setEditingRuleId(null)
       await loadRules()
+      toast.success(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to save rule')
     }
@@ -108,6 +126,7 @@ export function RulesPage() {
     try {
       await deleteRule(id)
       await loadRules()
+      toast.success('Rule deleted')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to delete rule')
     }
@@ -235,7 +254,16 @@ export function RulesPage() {
       </section>
 
       <section className="panel">
-        <h3>Configured Rules ({rules.length})</h3>
+        <h3>Configured Rules ({filteredRules.length})</h3>
+        <label className="span-2">
+          Search
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, type, or severity"
+          />
+        </label>
+        {loading ? <p>Loading rules...</p> : null}
         <div className="table-wrap">
           <table>
             <thead>
@@ -249,7 +277,7 @@ export function RulesPage() {
               </tr>
             </thead>
             <tbody>
-              {rules.map((rule) => (
+              {visibleRules.map((rule) => (
                 <tr key={rule.id}>
                   <td>#{rule.id}</td>
                   <td>{rule.name}</td>
@@ -270,7 +298,7 @@ export function RulesPage() {
                   </td>
                 </tr>
               ))}
-              {!rules.length ? (
+              {!visibleRules.length ? (
                 <tr>
                   <td className="empty-row" colSpan={6}>
                     No rules configured.
@@ -282,7 +310,17 @@ export function RulesPage() {
         </div>
       </section>
 
-      {loading ? <p>Loading...</p> : null}
+      {filteredRules.length > pageSize ? (
+        <div className="button-row">
+          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+            Previous
+          </button>
+          <span>Page {page} of {pageCount}</span>
+          <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
+            Next
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

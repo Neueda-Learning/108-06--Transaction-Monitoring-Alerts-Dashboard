@@ -29,9 +29,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { toast } from 'react-hot-toast'
 import { getAlerts, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
+import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import { Modal } from './components/Modal'
 import type {
@@ -41,9 +43,10 @@ import type {
   MonitoringRuleResponse,
   RuleType,
   Severity,
+  SimulationResult,
   TransactionResponse,
 } from './api/types'
-import { formatCurrency, formatDate } from './utils/format'
+import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
   | 'dashboard'
@@ -64,17 +67,21 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
-const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH']
+const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const API_DOCS = [
   { method: 'GET', path: '/api/transactions' },
   { method: 'POST', path: '/api/transactions' },
   { method: 'GET', path: '/api/alerts' },
+  { method: 'GET', path: '/api/alerts/{id}' },
   { method: 'PATCH', path: '/api/alerts/{id}/status' },
   { method: 'GET', path: '/api/rules' },
+  { method: 'GET', path: '/api/rules/{id}' },
   { method: 'POST', path: '/api/rules' },
   { method: 'PUT', path: '/api/rules/{id}' },
   { method: 'DELETE', path: '/api/rules/{id}' },
+  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
+  { method: 'GET', path: '/api/sdn/count' },
 ]
 
 const TX_CREATE_PLACEHOLDERS = {
@@ -82,6 +89,16 @@ const TX_CREATE_PLACEHOLDERS = {
   payeeId: 'PAYEE-008',
   amount: '5000',
   currency: 'USD',
+const DEFAULT_TX_FILTERS = {
+  search: '',
+  status: 'ALL' as const,
+  minAmount: '',
+  maxAmount: '',
+  sortBy: 'TIME_DESC' as const,
+}
+
+function getAlertCreatedToastMessage(count: number) {
+  return count === 1 ? 'Alert created' : `${count} alerts created`
 }
 
 function App() {
@@ -101,11 +118,17 @@ function App() {
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
 
-  const [txSearch, setTxSearch] = useState('')
-  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>('ALL')
-  const [txMinAmount, setTxMinAmount] = useState('')
-  const [txMaxAmount, setTxMaxAmount] = useState('')
-  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>('TIME_DESC')
+  const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [txMinAmount, setTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [txMaxAmount, setTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
+
+  const [appliedTxSearch, setAppliedTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
   const [createdTxId, setCreatedTxId] = useState<number | null>(null)
   const ledgerTableWrapRef = useRef<HTMLDivElement | null>(null)
@@ -132,6 +155,9 @@ function App() {
   const [apiBody, setApiBody] = useState('{\n  "accountId": "ACC-001",\n  "payeeId": "PAYEE-009",\n  "amount": 500,\n  "currency": "GBP"\n}')
   const [apiResponse, setApiResponse] = useState('')
 
+  const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
+  const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
+
   const loadAll = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -144,8 +170,14 @@ function App() {
       setTransactions(transactionResult)
       setAlerts(alertResult)
       setRules(ruleResult)
+      return {
+        transactions: transactionResult,
+        alerts: alertResult,
+        rules: ruleResult,
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load data from backend')
+      return null
     } finally {
       setLoading(false)
     }
@@ -154,6 +186,10 @@ function App() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  const showSuccessToast = useCallback((message: string) => {
+    toast.success(message, { duration: 2500 })
+  }, [])
 
   const alertsByTransaction = useMemo(() => {
     const map = new Map<number, AlertResponse[]>()
@@ -222,7 +258,7 @@ function App() {
       txBuckets[bucketIndex].count += 1
     })
 
-    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0 }
+    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
     const statusCount: Record<AlertStatus, number> = {
       OPEN: 0,
       ACKNOWLEDGED: 0,
@@ -235,6 +271,7 @@ function App() {
       VELOCITY: 0,
       NEW_PAYEE: 0,
       DAILY_LIMIT: 0,
+      SDN_MATCH: 0,
     }
     alerts.forEach((entry) => {
       severityCount[entry.severity] += 1
@@ -248,6 +285,7 @@ function App() {
         { key: 'LOW', label: 'LOW', count: severityCount.LOW, color: '#3b82f6' },
         { key: 'MEDIUM', label: 'MEDIUM', count: severityCount.MEDIUM, color: '#f59e0b' },
         { key: 'HIGH', label: 'HIGH', count: severityCount.HIGH, color: '#dc2626' },
+        { key: 'CRITICAL', label: 'CRITICAL', count: severityCount.CRITICAL, color: '#6d28d9' },
       ],
       byStatus: [
         { key: 'OPEN', label: 'OPEN', count: statusCount.OPEN, color: '#dc2626' },
@@ -261,6 +299,7 @@ function App() {
         { label: 'VELOCITY', count: ruleCount.VELOCITY },
         { label: 'NEW_PAYEE', count: ruleCount.NEW_PAYEE },
         { label: 'DAILY_LIMIT', count: ruleCount.DAILY_LIMIT },
+        { label: 'SDN_MATCH', count: ruleCount.SDN_MATCH },
       ],
     }
   }, [alerts, transactions])
@@ -287,22 +326,22 @@ function App() {
         return { ...entry, derivedStatus: status, linkedAlerts }
       })
       .filter((entry) => {
-        const searchValue = txSearch.trim().toLowerCase()
+        const searchValue = appliedTxSearch.trim().toLowerCase()
         const searchMatch =
           searchValue.length === 0 ||
           `${entry.id}`.includes(searchValue) ||
           entry.accountId.toLowerCase().includes(searchValue) ||
           entry.payeeId.toLowerCase().includes(searchValue)
-        const statusMatch = txStatusFilter === 'ALL' ? true : entry.derivedStatus === txStatusFilter
-        const minMatch = txMinAmount ? Number(entry.amount) >= Number(txMinAmount) : true
-        const maxMatch = txMaxAmount ? Number(entry.amount) <= Number(txMaxAmount) : true
+        const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.derivedStatus === appliedTxStatusFilter
+        const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
+        const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
         return searchMatch && statusMatch && minMatch && maxMatch
       })
       .sort((left, right) => {
-        if (txSortBy === 'AMOUNT_ASC') {
+        if (appliedTxSortBy === 'AMOUNT_ASC') {
           return Number(left.amount) - Number(right.amount)
         }
-        if (txSortBy === 'AMOUNT_DESC') {
+        if (appliedTxSortBy === 'AMOUNT_DESC') {
           return Number(right.amount) - Number(left.amount)
         }
         return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
@@ -411,6 +450,7 @@ function App() {
       dailyLimit: ruleForm.type === 'DAILY_LIMIT' ? Number(ruleForm.dailyLimit) : null,
     }
     setError(null)
+    const isCreatingRule = editingRuleId === null
     try {
       if (editingRuleId) {
         await updateRule(editingRuleId, payload)
@@ -426,24 +466,37 @@ function App() {
         amountThreshold: 10000,
       })
       await loadAll()
+      showSuccessToast(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (ruleError) {
       setError(ruleError instanceof Error ? ruleError.message : 'Failed to save rule')
     }
   }
 
-  const runSimulatorScenario = async (amount: number, payeeId: string, description: string) => {
+  const removeRule = async (id: number) => {
     setError(null)
     try {
-      await createTransaction({
-        accountId: `ACC-${Math.floor(Math.random() * 5 + 1).toString().padStart(3, '0')}`,
-        payeeId,
-        amount,
-        currency: 'GBP',
-        description,
-      })
+      await deleteRule(id)
       await loadAll()
+      showSuccessToast('Rule deleted')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete rule')
+    }
+  }
+
+  const runSimulatorScenario = async (scenario: string) => {
+    setError(null)
+    setSimulatorRunning(scenario)
+    try {
+      const result = await runSimulatorScenarioRequest(scenario)
+      setSimulatorResult(result)
+      await loadAll()
+      if (result.alerts.length > 0) {
+        showSuccessToast(getAlertCreatedToastMessage(result.alerts.length))
+      }
     } catch (simulationError) {
       setError(simulationError instanceof Error ? simulationError.message : 'Simulator run failed')
+    } finally {
+      setSimulatorRunning(null)
     }
   }
 
@@ -762,6 +815,14 @@ function App() {
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
               </select>
+              <div className="tx-toolbar-actions">
+                <button type="button" className="primary" onClick={applyTransactionFilters}>
+                  Apply Filters
+                </button>
+                <button type="button" className="ghost" onClick={resetTransactionFilters}>
+                  Reset Filters
+                </button>
+              </div>
             </section>
 
             <section className="card">
@@ -775,6 +836,7 @@ function App() {
                       <th>Debtor Account</th>
                       <th>Creditor Payee</th>
                       <th>Amount</th>
+                      <th>Risk Score</th>
                       <th>Rule Status</th>
                       <th>Action</th>
                     </tr>
@@ -791,6 +853,9 @@ function App() {
                         <td className="mono">{entry.accountId}</td>
                         <td className="mono">{entry.payeeId}</td>
                         <td>{formatCurrency(Number(entry.amount), entry.currency)}</td>
+                        <td>
+                          <span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span>
+                        </td>
                         <td>
                           <span className={`badge tx-${entry.derivedStatus.toLowerCase()}`}>{entry.derivedStatus}</span>
                         </td>
@@ -1031,7 +1096,7 @@ function App() {
                           >
                             Edit
                           </button>
-                          <button type="button" className="danger" onClick={async () => { await deleteRule(entry.id); await loadAll() }}>Delete</button>
+                          <button type="button" className="danger" onClick={() => void removeRule(entry.id)}>Delete</button>
                         </td>
                       </tr>
                     ))}
@@ -1046,25 +1111,87 @@ function App() {
           <section className="panel-stack">
             <article className="card">
               <h3>Transaction Simulator Utility</h3>
-              <p className="muted">Run preset scenarios and inspect generated transactions and alerts.</p>
+              <p className="muted">Run preset scenarios against the backend simulator API and inspect the generated transactions and alerts.</p>
               <div className="scenario-grid">
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(450, 'OFFICE-SUPPLIES', 'Normal safe transaction')}>
-                  <PlaySquare size={16} /> Normal Safe Transaction
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('clean')}>
+                  <PlaySquare size={16} /> {simulatorRunning === 'clean' ? 'Running…' : 'Normal Safe Transaction'}
                 </button>
-                <button type="button" className="scenario-card warning" onClick={() => void runSimulatorScenario(15000, 'INTL-WIRE-889', 'High amount threshold breach')}>
-                  <AlertTriangle size={16} /> High Amount Transaction
+                <button type="button" className="scenario-card warning" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('amount-threshold')}>
+                  <AlertTriangle size={16} /> {simulatorRunning === 'amount-threshold' ? 'Running…' : 'High Amount Transaction'}
                 </button>
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(9800, 'FAST-PAYEE-1', 'Velocity burst seed 1')}>
-                  <Clock3 size={16} /> Rapid Velocity Burst
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('velocity-burst')}>
+                  <Clock3 size={16} /> {simulatorRunning === 'velocity-burst' ? 'Running…' : 'Rapid Velocity Burst (6 txns)'}
                 </button>
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(1250, 'NEW-PAYEE-FIRST', 'First-time payee scenario')}>
-                  <Bot size={16} /> First-Time New Payee
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('new-payee')}>
+                  <Bot size={16} /> {simulatorRunning === 'new-payee' ? 'Running…' : 'First-Time New Payee'}
                 </button>
-                <button type="button" className="scenario-card danger" onClick={() => void runSimulatorScenario(52000, 'DAILY-LIMIT-EX', 'Daily cumulative limit pressure')}>
-                  <ShieldAlert size={16} /> Daily Limit Exceeded
+                <button type="button" className="scenario-card danger" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('daily-limit')}>
+                  <ShieldAlert size={16} /> {simulatorRunning === 'daily-limit' ? 'Running…' : 'Daily Limit Exceeded (6 txns)'}
+                </button>
+                <button type="button" className="scenario-card danger" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('sdn-match')}>
+                  <ShieldAlert size={16} /> {simulatorRunning === 'sdn-match' ? 'Running…' : 'OFAC SDN Sanctions Match'}
                 </button>
               </div>
             </article>
+
+            {simulatorResult ? (
+              <article className="card">
+                <h3>Last Run: {simulatorResult.scenario}</h3>
+                <p className="muted">{simulatorResult.description}</p>
+
+                <h4>Transactions Created ({simulatorResult.transactions.length})</h4>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Account</th>
+                      <th>Payee</th>
+                      <th>Amount</th>
+                      <th>Risk Score</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {simulatorResult.transactions.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{entry.id}</td>
+                        <td>{entry.accountId}</td>
+                        <td>{entry.payeeName ?? entry.payeeId}</td>
+                        <td>{formatCurrency(entry.amount, entry.currency)}</td>
+                        <td><span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span></td>
+                        <td><span className={`badge tx-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h4>Alerts Generated ({simulatorResult.alerts.length})</h4>
+                {simulatorResult.alerts.length === 0 ? (
+                  <p className="muted">No alerts generated for this scenario.</p>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Rule</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {simulatorResult.alerts.map((entry) => (
+                        <tr key={entry.id}>
+                          <td>{entry.ruleName}</td>
+                          <td><span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span></td>
+                          <td><span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
+                          <td>{entry.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </article>
+            ) : null}
           </section>
         ) : null}
 

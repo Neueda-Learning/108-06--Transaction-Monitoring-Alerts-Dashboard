@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { toast } from 'react-hot-toast'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
-import { formatCurrency, formatDate, toIsoFromLocalDateTime } from '../utils/format'
+import { formatCurrency, formatDate, riskBucket, toIsoFromLocalDateTime } from '../utils/format'
+import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const initialFilters: TransactionFilters = {
   accountId: '',
@@ -47,6 +49,8 @@ export function TransactionsPage() {
   const [fromLocal, setFromLocal] = useState('')
   const [toLocal, setToLocal] = useState('')
   const [transactions, setTransactions] = useState<TransactionResponse[]>([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [createdTransactionId, setCreatedTransactionId] = useState<number | null>(null)
@@ -231,6 +235,14 @@ export function TransactionsPage() {
       <section className="panel">
         <h3>Filters</h3>
         <form className="grid-form" onSubmit={onFilterSubmit}>
+          <label className="span-2">
+            Search
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by account, payee, or description"
+            />
+          </label>
           <label>
             Account ID
             <input
@@ -308,6 +320,7 @@ export function TransactionsPage() {
                 <th>Account</th>
                 <th>Payee</th>
                 <th>Amount</th>
+                <th>Risk Score</th>
                 <th>Occurred At</th>
                 <th>Description</th>
               </tr>
@@ -323,13 +336,16 @@ export function TransactionsPage() {
                   <td>{transaction.accountId}</td>
                   <td>{transaction.payeeId}</td>
                   <td>{formatCurrency(Number(transaction.amount), transaction.currency)}</td>
+                  <td>
+                    <span className={`badge sev-${riskBucket(transaction.riskScore)}`}>{transaction.riskScore}</span>
+                  </td>
                   <td>{formatDate(transaction.occurredAt)}</td>
                   <td>{transaction.description || '--'}</td>
                 </tr>
               ))}
-              {!transactions.length ? (
+              {!visibleTransactions.length ? (
                 <tr>
-                  <td className="empty-row" colSpan={6}>
+                  <td className="empty-row" colSpan={7}>
                     No transactions found for the current filters.
                   </td>
                 </tr>
@@ -337,6 +353,17 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
+        {filteredTransactions.length > pageSize ? (
+          <div className="button-row">
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </button>
+            <span>Page {page} of {pageCount}</span>
+            <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
+              Next
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   )

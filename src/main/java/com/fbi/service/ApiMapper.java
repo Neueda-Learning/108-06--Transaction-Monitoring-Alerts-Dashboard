@@ -23,7 +23,8 @@ public final class ApiMapper {
             transaction.getCountry(),
             transaction.getStatus(),
             transaction.getOccurredAt(),
-            transaction.getDescription()
+            transaction.getDescription(),
+            transaction.getRiskScore()
         );
     }
 

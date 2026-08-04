@@ -456,6 +456,12 @@ td .ghost {
   border-color: rgba(59, 130, 246, 0.28);
 }
 
+.sev-critical {
+  background: rgba(124, 58, 237, 0.14);
+  color: #6d28d9;
+  border-color: rgba(124, 58, 237, 0.32);
+}
+
 .st-closed,
 .st-dismissed,
 .tx-clean {
@@ -535,7 +541,13 @@ td .ghost {
 
 .tx-toolbar {
   display: grid;
-  grid-template-columns: 2fr repeat(4, minmax(130px, 1fr));
+  grid-template-columns: 2fr repeat(4, minmax(130px, 1fr)) auto;
+  gap: 8px;
+}
+
+.tx-toolbar-actions {
+  display: inline-flex;
+  justify-self: end;
   gap: 8px;
 }
 
@@ -682,6 +694,7 @@ td .ghost {
   padding: 10px 12px;
 }
 
+
 @media (max-width: 1200px) {
   .kpi-grid {
     grid-template-columns: repeat(2, minmax(170px, 1fr));
@@ -689,6 +702,12 @@ td .ghost {
 
   .tx-toolbar {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .tx-toolbar-actions {
+    justify-self: stretch;
+    grid-column: span 2;
+    justify-content: flex-end;
   }
 }
 
@@ -738,5 +757,12 @@ td .ghost {
 
   .tx-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .tx-toolbar-actions {
+    grid-column: span 1;
+    justify-self: stretch;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }

@@ -1,12 +1,20 @@
 package com.fbi.service;
 
+import com.fbi.dto.AlertHistoryEntry;
+import com.fbi.dto.AlertInvestigationResponse;
+import com.fbi.dto.AlertNoteResponse;
 import com.fbi.exception.BadRequestException;
 import com.fbi.exception.NotFoundException;
 import com.fbi.model.Alert;
 import com.fbi.model.AlertStatus;
 import com.fbi.model.Severity;
+import com.fbi.model.AlertNote;
+import com.fbi.model.MonitoredTransaction;
 import com.fbi.repository.AlertRepository;
+import com.fbi.repository.AlertNoteRepository;
+import com.fbi.repository.MonitoredTransactionRepository;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -14,9 +22,17 @@ import org.springframework.stereotype.Service;
 public class AlertService {
 
     private final AlertRepository alertRepository;
+    private final AlertNoteRepository alertNoteRepository;
+    private final MonitoredTransactionRepository transactionRepository;
 
-    public AlertService(AlertRepository alertRepository) {
+    public AlertService(
+        AlertRepository alertRepository,
+        AlertNoteRepository alertNoteRepository,
+        MonitoredTransactionRepository transactionRepository
+    ) {
         this.alertRepository = alertRepository;
+        this.alertNoteRepository = alertNoteRepository;
+        this.transactionRepository = transactionRepository;
     }
 
     public List<Alert> getAlerts(AlertStatus status, Severity severity) {
@@ -53,6 +69,98 @@ public class AlertService {
             }
         }
         return alertRepository.save(alert);
+    }
+
+    public List<AlertHistoryEntry> getAlertHistory(Long id) {
+        Alert alert = getById(id);
+        List<AlertHistoryEntry> history = new java.util.ArrayList<>();
+
+        if (alert.getCreatedAt() != null) {
+            history.add(new AlertHistoryEntry(AlertStatus.OPEN, alert.getCreatedAt(), "Alert created"));
+        }
+        if (alert.getAcknowledgedAt() != null) {
+            history.add(new AlertHistoryEntry(AlertStatus.ACKNOWLEDGED, alert.getAcknowledgedAt(), alert.getLifecycleNote()));
+        }
+        if (alert.getInvestigatingAt() != null) {
+            history.add(new AlertHistoryEntry(AlertStatus.INVESTIGATING, alert.getInvestigatingAt(), alert.getLifecycleNote()));
+        }
+        if (alert.getClosedAt() != null) {
+            history.add(new AlertHistoryEntry(AlertStatus.CLOSED, alert.getClosedAt(), alert.getLifecycleNote()));
+        }
+        if (alert.getDismissedAt() != null) {
+            history.add(new AlertHistoryEntry(AlertStatus.DISMISSED, alert.getDismissedAt(), alert.getLifecycleNote()));
+        }
+
+        history.sort(java.util.Comparator.comparing(AlertHistoryEntry::timestamp));
+        return history;
+    }
+
+    public AlertNoteResponse addNote(Long alertId, String note) {
+        getById(alertId);
+        String normalized = note == null ? "" : note.trim();
+        if (normalized.isEmpty()) {
+            throw new BadRequestException("note must not be blank");
+        }
+
+        AlertNote alertNote = new AlertNote();
+        alertNote.setAlertId(alertId);
+        alertNote.setNote(normalized);
+        AlertNote saved = alertNoteRepository.save(alertNote);
+
+        return new AlertNoteResponse(saved.getId(), saved.getAlertId(), saved.getNote(), saved.getCreatedAt());
+    }
+
+    public AlertInvestigationResponse investigateAlert(Long alertId, boolean persistToLifecycleNote) {
+        Alert alert = getById(alertId);
+        MonitoredTransaction transaction = transactionRepository.findById(alert.getTransactionId())
+            .orElse(null);
+
+        List<com.fbi.model.AlertNote> notes = alertNoteRepository.findByAlertIdOrderByCreatedAtAsc(alertId);
+        String riskLevel = switch (alert.getSeverity()) {
+            case CRITICAL -> "VERY_HIGH";
+            case HIGH -> "HIGH";
+            case MEDIUM -> "MEDIUM";
+            case LOW -> "LOW";
+        };
+
+        List<String> findings = new ArrayList<>();
+        findings.add("Rule triggered: " + alert.getRuleName() + " (" + alert.getRuleType() + ")");
+        findings.add("Current status: " + alert.getStatus());
+        findings.add("Severity assessment: " + alert.getSeverity());
+
+        if (transaction != null) {
+            findings.add("Transaction amount: " + transaction.getAmount() + " " + transaction.getCurrency());
+            findings.add("Account: " + transaction.getAccountId() + ", Payee: " + transaction.getPayeeId());
+            if (transaction.getCountry() != null && !transaction.getCountry().isBlank()) {
+                findings.add("Destination country: " + transaction.getCountry());
+            }
+        } else {
+            findings.add("Associated transaction record is not available.");
+        }
+
+        findings.add("Analyst note count: " + notes.size());
+
+        String summary = "Investigation generated for alert " + alertId + ": "
+            + "rule='" + alert.getRuleName() + "', severity=" + alert.getSeverity()
+            + ", status=" + alert.getStatus()
+            + ", notes=" + notes.size() + ".";
+
+        if (persistToLifecycleNote) {
+            alert.setLifecycleNote(summary);
+            alertRepository.save(alert);
+        }
+
+        return new AlertInvestigationResponse(
+            alert.getId(),
+            alert.getStatus(),
+            alert.getSeverity(),
+            riskLevel,
+            summary,
+            findings,
+            notes.size(),
+            Instant.now(),
+            persistToLifecycleNote
+        );
     }
 
     private void validateTransition(AlertStatus current, AlertStatus target) {

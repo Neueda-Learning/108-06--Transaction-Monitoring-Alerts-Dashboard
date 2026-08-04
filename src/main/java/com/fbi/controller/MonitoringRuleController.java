@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PatchMapping;
 
 @RestController
 @RequestMapping("/api/rules")
@@ -53,6 +54,12 @@ public class MonitoringRuleController {
         return ApiMapper.toResponse(monitoringRuleService.update(id, request));
     }
 
+    @PatchMapping("/{id}/toggle")
+    @Operation(summary = "Toggle monitoring rule active state")
+    public MonitoringRuleResponse toggle(@PathVariable Long id) {
+        return ApiMapper.toResponse(monitoringRuleService.toggleActive(id));
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Delete a monitoring rule")
@@ -60,4 +67,3 @@ public class MonitoringRuleController {
         monitoringRuleService.delete(id);
     }
 }
-
