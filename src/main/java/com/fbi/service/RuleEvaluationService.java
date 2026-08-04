@@ -55,10 +55,15 @@ public class RuleEvaluationService {
     }
 
     private boolean isNewPayeeTriggered(MonitoredTransaction transaction) {
-        return !transactionRepository.existsByAccountIdAndPayeeIdAndOccurredAtBefore(
+        // Exclude the transaction's own row: it is already persisted by the time rule
+        // evaluation runs (see TransactionService's two-phase pipeline), and timestamp
+        // precision rounding on write can otherwise make it spuriously match itself as
+        // "prior history", silently suppressing this alert for a genuinely new payee.
+        return !transactionRepository.existsByAccountIdAndPayeeIdAndOccurredAtBeforeAndIdNot(
             transaction.getAccountId(),
             transaction.getPayeeId(),
-            transaction.getOccurredAt()
+            transaction.getOccurredAt(),
+            transaction.getId()
         );
     }
 

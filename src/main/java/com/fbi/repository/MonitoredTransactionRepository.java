@@ -12,7 +12,7 @@ public interface MonitoredTransactionRepository extends JpaRepository<MonitoredT
 
     long countByAccountIdAndOccurredAtAfter(String accountId, Instant occurredAt);
 
-    boolean existsByAccountIdAndPayeeIdAndOccurredAtBefore(String accountId, String payeeId, Instant occurredAt);
+    boolean existsByAccountIdAndPayeeIdAndOccurredAtBeforeAndIdNot(String accountId, String payeeId, Instant occurredAt, Long id);
 
     @Query("select coalesce(sum(t.amount), 0) from MonitoredTransaction t where t.accountId = :accountId and t.occurredAt >= :start and t.occurredAt < :end")
     BigDecimal sumAmountForAccountBetween(@Param("accountId") String accountId, @Param("start") Instant start, @Param("end") Instant end);
