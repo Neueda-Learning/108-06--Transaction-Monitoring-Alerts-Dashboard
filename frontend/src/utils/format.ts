@@ -30,3 +30,16 @@ export function toIsoFromLocalDateTime(value: string): string | null {
   return parsed.toISOString()
 }
 
+export function riskBucket(score: number): 'low' | 'medium' | 'high' | 'critical' {
+  if (score >= 85) {
+    return 'critical'
+  }
+  if (score >= 60) {
+    return 'high'
+  }
+  if (score >= 25) {
+    return 'medium'
+  }
+  return 'low'
+}
+

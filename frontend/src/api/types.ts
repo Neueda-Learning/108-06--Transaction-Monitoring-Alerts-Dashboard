@@ -17,6 +17,7 @@ export interface TransactionResponse {
   status: TransactionStatus
   occurredAt: string | null
   description: string | null
+  riskScore: number
 }
 
 export interface TransactionCreateRequest {

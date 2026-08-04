@@ -5,11 +5,21 @@ import type { MonitoringRuleResponse } from '../api/types'
 import * as rulesApi from '../api/rules'
 import { RulesPage } from './RulesPage'
 
+const { toastSuccess } = vi.hoisted(() => ({
+  toastSuccess: vi.fn(),
+}))
+
 vi.mock('../api/rules', () => ({
   getRules: vi.fn(),
   createRule: vi.fn(),
   updateRule: vi.fn(),
   deleteRule: vi.fn(),
+}))
+
+vi.mock('react-hot-toast', () => ({
+  toast: {
+    success: toastSuccess,
+  },
 }))
 
 function makeRule(id: number, overrides: Partial<MonitoringRuleResponse> = {}): MonitoringRuleResponse {
@@ -33,6 +43,7 @@ describe('RulesPage', () => {
     vi.mocked(rulesApi.createRule).mockResolvedValue(makeRule(100))
     vi.mocked(rulesApi.updateRule).mockResolvedValue(makeRule(101))
     vi.mocked(rulesApi.deleteRule).mockResolvedValue(undefined)
+    toastSuccess.mockReset()
   })
 
   it('shows loading state, then renders loaded rules and exact fetch count', async () => {
@@ -87,6 +98,7 @@ describe('RulesPage', () => {
         dailyLimit: null,
       })
       expect(rulesApi.getRules).toHaveBeenCalledTimes(2)
+      expect(toastSuccess).toHaveBeenCalledWith('Rule created')
     })
   })
 
@@ -116,6 +128,7 @@ describe('RulesPage', () => {
         dailyLimit: null,
       })
       expect(rulesApi.getRules).toHaveBeenCalledTimes(2)
+      expect(toastSuccess).toHaveBeenCalledWith('Rule created')
     })
   })
 
@@ -170,6 +183,7 @@ describe('RulesPage', () => {
         }),
       )
       expect(rulesApi.getRules).toHaveBeenCalledTimes(2)
+      expect(toastSuccess).toHaveBeenCalledWith('Rule updated successfully')
     })
   })
 
@@ -207,6 +221,7 @@ describe('RulesPage', () => {
       expect(rulesApi.deleteRule).toHaveBeenCalledTimes(1)
       expect(rulesApi.deleteRule).toHaveBeenCalledWith(5)
       expect(rulesApi.getRules).toHaveBeenCalledTimes(2)
+      expect(toastSuccess).toHaveBeenCalledWith('Rule deleted')
     })
   })
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
+import { toast } from 'react-hot-toast'
 import { createRule, deleteRule, getRules, updateRule } from '../api/rules'
 import type { MonitoringRuleRequest, MonitoringRuleResponse, RuleType, Severity } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -87,6 +88,7 @@ export function RulesPage() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
+    const isCreatingRule = editingRuleId === null
 
     try {
       if (editingRuleId) {
@@ -97,6 +99,7 @@ export function RulesPage() {
       setForm(initialForm)
       setEditingRuleId(null)
       await loadRules()
+      toast.success(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to save rule')
     }
@@ -123,6 +126,7 @@ export function RulesPage() {
     try {
       await deleteRule(id)
       await loadRules()
+      toast.success('Rule deleted')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to delete rule')
     }

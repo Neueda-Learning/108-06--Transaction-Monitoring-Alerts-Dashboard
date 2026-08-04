@@ -29,6 +29,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { toast } from 'react-hot-toast'
 import { getAlerts, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
@@ -44,7 +45,7 @@ import type {
   SimulationResult,
   TransactionResponse,
 } from './api/types'
-import { formatCurrency, formatDate } from './utils/format'
+import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
   | 'dashboard'
@@ -82,6 +83,18 @@ const API_DOCS = [
   { method: 'GET', path: '/api/sdn/count' },
 ]
 
+const DEFAULT_TX_FILTERS = {
+  search: '',
+  status: 'ALL' as const,
+  minAmount: '',
+  maxAmount: '',
+  sortBy: 'TIME_DESC' as const,
+}
+
+function getAlertCreatedToastMessage(count: number) {
+  return count === 1 ? 'Alert created' : `${count} alerts created`
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard')
   const [darkMode, setDarkMode] = useState(false)
@@ -102,11 +115,17 @@ function App() {
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
 
-  const [txSearch, setTxSearch] = useState('')
-  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>('ALL')
-  const [txMinAmount, setTxMinAmount] = useState('')
-  const [txMaxAmount, setTxMaxAmount] = useState('')
-  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>('TIME_DESC')
+  const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [txMinAmount, setTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [txMaxAmount, setTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
+
+  const [appliedTxSearch, setAppliedTxSearch] = useState(DEFAULT_TX_FILTERS.search)
+  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
+  const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
+  const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
 
   const [ruleForm, setRuleForm] = useState<MonitoringRuleRequest>({
@@ -146,8 +165,14 @@ function App() {
       setTransactions(transactionResult)
       setAlerts(alertResult)
       setRules(ruleResult)
+      return {
+        transactions: transactionResult,
+        alerts: alertResult,
+        rules: ruleResult,
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load data from backend')
+      return null
     } finally {
       setLoading(false)
     }
@@ -156,6 +181,10 @@ function App() {
   useEffect(() => {
     void loadAll()
   }, [loadAll])
+
+  const showSuccessToast = useCallback((message: string) => {
+    toast.success(message, { duration: 2500 })
+  }, [])
 
   const alertsByTransaction = useMemo(() => {
     const map = new Map<number, AlertResponse[]>()
@@ -302,27 +331,59 @@ function App() {
         return { ...entry, derivedStatus: status, linkedAlerts }
       })
       .filter((entry) => {
-        const searchValue = txSearch.trim().toLowerCase()
+        const searchValue = appliedTxSearch.trim().toLowerCase()
         const searchMatch =
           searchValue.length === 0 ||
           `${entry.id}`.includes(searchValue) ||
           entry.accountId.toLowerCase().includes(searchValue) ||
           entry.payeeId.toLowerCase().includes(searchValue)
-        const statusMatch = txStatusFilter === 'ALL' ? true : entry.derivedStatus === txStatusFilter
-        const minMatch = txMinAmount ? Number(entry.amount) >= Number(txMinAmount) : true
-        const maxMatch = txMaxAmount ? Number(entry.amount) <= Number(txMaxAmount) : true
+        const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.derivedStatus === appliedTxStatusFilter
+        const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
+        const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
         return searchMatch && statusMatch && minMatch && maxMatch
       })
       .sort((left, right) => {
-        if (txSortBy === 'AMOUNT_ASC') {
+        if (appliedTxSortBy === 'AMOUNT_ASC') {
           return Number(left.amount) - Number(right.amount)
         }
-        if (txSortBy === 'AMOUNT_DESC') {
+        if (appliedTxSortBy === 'AMOUNT_DESC') {
           return Number(right.amount) - Number(left.amount)
         }
         return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
       })
-  }, [alertsByTransaction, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [
+    alertsByTransaction,
+    transactions,
+    appliedTxSearch,
+    appliedTxStatusFilter,
+    appliedTxMinAmount,
+    appliedTxMaxAmount,
+    appliedTxSortBy,
+  ])
+
+  const applyTransactionFilters = () => {
+    setAppliedTxSearch(txSearch)
+    setAppliedTxStatusFilter(txStatusFilter)
+    setAppliedTxMinAmount(txMinAmount)
+    setAppliedTxMaxAmount(txMaxAmount)
+    setAppliedTxSortBy(txSortBy)
+    setSelectedTxId(null)
+  }
+
+  const resetTransactionFilters = () => {
+    setTxSearch(DEFAULT_TX_FILTERS.search)
+    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+
+    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
+    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setSelectedTxId(null)
+  }
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
@@ -333,14 +394,23 @@ function App() {
     event.preventDefault()
     setError(null)
     try {
-      await createTransaction({
+      const existingAlertIds = new Set(alerts.map((entry) => entry.id))
+      const createdTransaction = await createTransaction({
         accountId: transactionForm.accountId,
         payeeId: transactionForm.payeeId,
         amount: Number(transactionForm.amount),
         currency: transactionForm.currency.toUpperCase(),
         description: transactionForm.description || null,
       })
-      await loadAll()
+      const refreshedData = await loadAll()
+      showSuccessToast('Transaction created')
+      const createdAlerts =
+        refreshedData?.alerts.filter(
+          (entry) => entry.transactionId === createdTransaction.id && !existingAlertIds.has(entry.id),
+        ) ?? []
+      if (createdAlerts.length > 0) {
+        showSuccessToast(getAlertCreatedToastMessage(createdAlerts.length))
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create transaction')
     }
@@ -380,6 +450,7 @@ function App() {
       dailyLimit: ruleForm.type === 'DAILY_LIMIT' ? Number(ruleForm.dailyLimit) : null,
     }
     setError(null)
+    const isCreatingRule = editingRuleId === null
     try {
       if (editingRuleId) {
         await updateRule(editingRuleId, payload)
@@ -395,8 +466,20 @@ function App() {
         amountThreshold: 10000,
       })
       await loadAll()
+      showSuccessToast(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (ruleError) {
       setError(ruleError instanceof Error ? ruleError.message : 'Failed to save rule')
+    }
+  }
+
+  const removeRule = async (id: number) => {
+    setError(null)
+    try {
+      await deleteRule(id)
+      await loadAll()
+      showSuccessToast('Rule deleted')
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete rule')
     }
   }
 
@@ -407,6 +490,9 @@ function App() {
       const result = await runSimulatorScenarioRequest(scenario)
       setSimulatorResult(result)
       await loadAll()
+      if (result.alerts.length > 0) {
+        showSuccessToast(getAlertCreatedToastMessage(result.alerts.length))
+      }
     } catch (simulationError) {
       setError(simulationError instanceof Error ? simulationError.message : 'Simulator run failed')
     } finally {
@@ -725,6 +811,14 @@ function App() {
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
               </select>
+              <div className="tx-toolbar-actions">
+                <button type="button" className="primary" onClick={applyTransactionFilters}>
+                  Apply Filters
+                </button>
+                <button type="button" className="ghost" onClick={resetTransactionFilters}>
+                  Reset Filters
+                </button>
+              </div>
             </section>
 
             <section className="card">
@@ -738,6 +832,7 @@ function App() {
                       <th>Debtor Account</th>
                       <th>Creditor Payee</th>
                       <th>Amount</th>
+                      <th>Risk Score</th>
                       <th>Rule Status</th>
                       <th>Action</th>
                     </tr>
@@ -750,6 +845,9 @@ function App() {
                         <td className="mono">{entry.accountId}</td>
                         <td className="mono">{entry.payeeId}</td>
                         <td>{formatCurrency(Number(entry.amount), entry.currency)}</td>
+                        <td>
+                          <span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span>
+                        </td>
                         <td>
                           <span className={`badge tx-${entry.derivedStatus.toLowerCase()}`}>{entry.derivedStatus}</span>
                         </td>
@@ -1007,7 +1105,7 @@ function App() {
                           >
                             Edit
                           </button>
-                          <button type="button" className="danger" onClick={async () => { await deleteRule(entry.id); await loadAll() }}>Delete</button>
+                          <button type="button" className="danger" onClick={() => void removeRule(entry.id)}>Delete</button>
                         </td>
                       </tr>
                     ))}
@@ -1058,6 +1156,7 @@ function App() {
                       <th>Account</th>
                       <th>Payee</th>
                       <th>Amount</th>
+                      <th>Risk Score</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -1068,6 +1167,7 @@ function App() {
                         <td>{entry.accountId}</td>
                         <td>{entry.payeeName ?? entry.payeeId}</td>
                         <td>{formatCurrency(entry.amount, entry.currency)}</td>
+                        <td><span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span></td>
                         <td><span className={`badge tx-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
                       </tr>
                     ))}
