@@ -32,7 +32,7 @@ public class SimulatorService {
         SCENARIOS.put("amount-threshold", "A single transaction above the $10,000 amount threshold.");
         SCENARIOS.put("velocity-burst", "Six rapid transactions from the same account, triggering the velocity rule (>5 in 10 minutes).");
         SCENARIOS.put("new-payee", "A transaction to a payee the account has never paid before.");
-        SCENARIOS.put("daily-limit", "Four transactions in one day whose cumulative total breaches the $50,000 daily limit.");
+        SCENARIOS.put("daily-limit", "Six transactions in one day, each below the amount threshold, whose cumulative total breaches the $50,000 daily limit.");
         SCENARIOS.put("sdn-match", "A transaction to a payee name matching an OFAC SDN sanctions list entry - blocked immediately.");
     }
 
