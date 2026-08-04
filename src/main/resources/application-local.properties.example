@@ -1,0 +1,10 @@
+# Copy this file to application-local.properties and set values for your machine.
+# Then run Spring Boot with the local profile enabled, for example:
+#   mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
+# or:
+#   set DB_PASSWORD=your-password && mvnw.cmd spring-boot:run
+
+spring.datasource.url=jdbc:mysql://localhost:3306/transaction_management?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+spring.datasource.username=root
+spring.datasource.password=change-me
+

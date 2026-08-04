@@ -38,3 +38,6 @@ build/
 /FBI_Team_Reference_Part1.md
 /FBI_Team_Reference_Part2.md
 
+### Local Spring configuration ###
+/src/main/resources/application-local.properties
+

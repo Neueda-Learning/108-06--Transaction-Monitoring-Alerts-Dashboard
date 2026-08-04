@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { formatCurrency, formatDate, toIsoFromLocalDateTime } from '../utils/format'
+import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const initialFilters: TransactionFilters = {
   accountId: '',
@@ -19,8 +20,11 @@ export function TransactionsPage() {
   const [fromLocal, setFromLocal] = useState('')
   const [toLocal, setToLocal] = useState('')
   const [transactions, setTransactions] = useState<TransactionResponse[]>([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pageSize = 8
 
   const [accountId, setAccountId] = useState('ACC-001')
   const [payeeId, setPayeeId] = useState('PAYEE-001')
@@ -45,6 +49,17 @@ export function TransactionsPage() {
   useEffect(() => {
     void loadTransactions(initialFilters)
   }, [loadTransactions])
+
+  const filteredTransactions = useMemo(() => {
+    return filterItemsByText(transactions, search, (transaction) => [transaction.accountId, transaction.payeeId, transaction.description, transaction.currency, transaction.id])
+  }, [transactions, search])
+
+  const pageCount = useMemo(() => getPageCount(filteredTransactions.length, pageSize), [filteredTransactions.length])
+  const visibleTransactions = useMemo(() => paginateItems(filteredTransactions, page, pageSize), [filteredTransactions, page])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, filters])
 
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -133,6 +148,14 @@ export function TransactionsPage() {
       <section className="panel">
         <h3>Filters</h3>
         <form className="grid-form" onSubmit={onFilterSubmit}>
+          <label className="span-2">
+            Search
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by account, payee, or description"
+            />
+          </label>
           <label>
             Account ID
             <input
@@ -202,7 +225,8 @@ export function TransactionsPage() {
       </section>
 
       <section className="panel">
-        <h3>Transaction Results ({transactions.length})</h3>
+        <h3>Transaction Results ({filteredTransactions.length})</h3>
+        {loading ? <p>Loading transactions...</p> : null}
         <div className="table-wrap">
           <table>
             <thead>
@@ -216,7 +240,7 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((transaction) => (
+              {visibleTransactions.map((transaction) => (
                 <tr key={transaction.id}>
                   <td>#{transaction.id}</td>
                   <td>{transaction.accountId}</td>
@@ -226,7 +250,7 @@ export function TransactionsPage() {
                   <td>{transaction.description || '--'}</td>
                 </tr>
               ))}
-              {!transactions.length ? (
+              {!visibleTransactions.length ? (
                 <tr>
                   <td className="empty-row" colSpan={6}>
                     No transactions found for the current filters.
@@ -236,6 +260,17 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
+        {filteredTransactions.length > pageSize ? (
+          <div className="button-row">
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              Previous
+            </button>
+            <span>Page {page} of {pageCount}</span>
+            <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
+              Next
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   )

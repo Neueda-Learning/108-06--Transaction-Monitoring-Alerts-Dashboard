@@ -31,7 +31,7 @@ net start MySQL80
 To verify MySQL is running:
 
 ```powershell
-mysql -u root -pn3u3da! -e "SELECT 1;"
+mysql -u root -p -e "SELECT 1;"
 ```
 
 You should see a result with no errors.
@@ -41,8 +41,16 @@ You should see a result with no errors.
 ### Window 1: Backend
 
 ```powershell
-cd "C:\Users\Administrator\Java_Learning\108-06--Transaction-Monitoring-Alerts-Dashboard"
+cd "C:\path\to\108-06--Transaction-Monitoring-Alerts-Dashboard"
+$env:DB_USERNAME = "root"
+$env:DB_PASSWORD = "your-local-password"
 mvnw.cmd spring-boot:run
+```
+
+If you prefer a profile file, copy `src\main\resources\application-local.properties.example` to `src\main\resources\application-local.properties`, update the values, and run:
+
+```powershell
+mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 Wait for output showing:
@@ -53,7 +61,7 @@ Started Transaction_Monitoring in X.XXX seconds
 ### Window 2: Frontend
 
 ```powershell
-cd "C:\Users\Administrator\Java_Learning\108-06--Transaction-Monitoring-Alerts-Dashboard\frontend"
+cd "C:\path\to\108-06--Transaction-Monitoring-Alerts-Dashboard\frontend"
 npm install
 npm run dev
 ```
@@ -103,18 +111,18 @@ taskkill /PID <PID> /F
 1. Ensure MySQL is running: `net start MySQL80`
 2. Test connection:
    ```powershell
-   mysql -u root -pn3u3da! -e "USE transaction_management; SELECT 1;"
+   mysql -u root -p -e "USE transaction_management; SELECT 1;"
    ```
 3. If database doesn't exist:
    ```powershell
-   mysql -u root -pn3u3da! -e "CREATE DATABASE transaction_management;"
+   mysql -u root -p -e "CREATE DATABASE transaction_management;"
    ```
 
 ### "mvnw command not found"
 
 Use full path:
 ```powershell
-cd "C:\Users\Administrator\Java_Learning\108-06--Transaction-Monitoring-Alerts-Dashboard"
+cd "C:\path\to\108-06--Transaction-Monitoring-Alerts-Dashboard"
 .\mvnw.cmd spring-boot:run
 ```
 

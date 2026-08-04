@@ -65,17 +65,21 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
-const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH']
+const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 const API_DOCS = [
   { method: 'GET', path: '/api/transactions' },
   { method: 'POST', path: '/api/transactions' },
   { method: 'GET', path: '/api/alerts' },
+  { method: 'GET', path: '/api/alerts/{id}' },
   { method: 'PATCH', path: '/api/alerts/{id}/status' },
   { method: 'GET', path: '/api/rules' },
+  { method: 'GET', path: '/api/rules/{id}' },
   { method: 'POST', path: '/api/rules' },
   { method: 'PUT', path: '/api/rules/{id}' },
   { method: 'DELETE', path: '/api/rules/{id}' },
+  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
+  { method: 'GET', path: '/api/sdn/count' },
 ]
 
 function App() {
