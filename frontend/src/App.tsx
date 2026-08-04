@@ -32,6 +32,7 @@ import {
 import { getAlerts, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
+import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import type {
   AlertResponse,
@@ -40,6 +41,7 @@ import type {
   MonitoringRuleResponse,
   RuleType,
   Severity,
+  SimulationResult,
   TransactionResponse,
 } from './api/types'
 import { formatCurrency, formatDate } from './utils/format'
@@ -124,6 +126,9 @@ function App() {
   const [apiMethod, setApiMethod] = useState(API_DOCS[0].method)
   const [apiBody, setApiBody] = useState('{\n  "accountId": "ACC-001",\n  "payeeId": "PAYEE-009",\n  "amount": 500,\n  "currency": "GBP"\n}')
   const [apiResponse, setApiResponse] = useState('')
+
+  const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
+  const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -225,7 +230,7 @@ function App() {
       txBuckets[bucketIndex].count += 1
     })
 
-    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0 }
+    const severityCount: Record<Severity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
     const statusCount: Record<AlertStatus, number> = {
       OPEN: 0,
       ACKNOWLEDGED: 0,
@@ -238,6 +243,7 @@ function App() {
       VELOCITY: 0,
       NEW_PAYEE: 0,
       DAILY_LIMIT: 0,
+      SDN_MATCH: 0,
     }
     alerts.forEach((entry) => {
       severityCount[entry.severity] += 1
@@ -251,6 +257,7 @@ function App() {
         { key: 'LOW', label: 'LOW', count: severityCount.LOW, color: '#3b82f6' },
         { key: 'MEDIUM', label: 'MEDIUM', count: severityCount.MEDIUM, color: '#f59e0b' },
         { key: 'HIGH', label: 'HIGH', count: severityCount.HIGH, color: '#dc2626' },
+        { key: 'CRITICAL', label: 'CRITICAL', count: severityCount.CRITICAL, color: '#6d28d9' },
       ],
       byStatus: [
         { key: 'OPEN', label: 'OPEN', count: statusCount.OPEN, color: '#dc2626' },
@@ -264,6 +271,7 @@ function App() {
         { label: 'VELOCITY', count: ruleCount.VELOCITY },
         { label: 'NEW_PAYEE', count: ruleCount.NEW_PAYEE },
         { label: 'DAILY_LIMIT', count: ruleCount.DAILY_LIMIT },
+        { label: 'SDN_MATCH', count: ruleCount.SDN_MATCH },
       ],
     }
   }, [alerts, transactions])
@@ -388,19 +396,17 @@ function App() {
     }
   }
 
-  const runSimulatorScenario = async (amount: number, payeeId: string, description: string) => {
+  const runSimulatorScenario = async (scenario: string) => {
     setError(null)
+    setSimulatorRunning(scenario)
     try {
-      await createTransaction({
-        accountId: `ACC-${Math.floor(Math.random() * 5 + 1).toString().padStart(3, '0')}`,
-        payeeId,
-        amount,
-        currency: 'GBP',
-        description,
-      })
+      const result = await runSimulatorScenarioRequest(scenario)
+      setSimulatorResult(result)
       await loadAll()
     } catch (simulationError) {
       setError(simulationError instanceof Error ? simulationError.message : 'Simulator run failed')
+    } finally {
+      setSimulatorRunning(null)
     }
   }
 
@@ -1012,25 +1018,85 @@ function App() {
           <section className="panel-stack">
             <article className="card">
               <h3>Transaction Simulator Utility</h3>
-              <p className="muted">Run preset scenarios and inspect generated transactions and alerts.</p>
+              <p className="muted">Run preset scenarios against the backend simulator API and inspect the generated transactions and alerts.</p>
               <div className="scenario-grid">
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(450, 'OFFICE-SUPPLIES', 'Normal safe transaction')}>
-                  <PlaySquare size={16} /> Normal Safe Transaction
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('clean')}>
+                  <PlaySquare size={16} /> {simulatorRunning === 'clean' ? 'Running…' : 'Normal Safe Transaction'}
                 </button>
-                <button type="button" className="scenario-card warning" onClick={() => void runSimulatorScenario(15000, 'INTL-WIRE-889', 'High amount threshold breach')}>
-                  <AlertTriangle size={16} /> High Amount Transaction
+                <button type="button" className="scenario-card warning" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('amount-threshold')}>
+                  <AlertTriangle size={16} /> {simulatorRunning === 'amount-threshold' ? 'Running…' : 'High Amount Transaction'}
                 </button>
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(9800, 'FAST-PAYEE-1', 'Velocity burst seed 1')}>
-                  <Clock3 size={16} /> Rapid Velocity Burst
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('velocity-burst')}>
+                  <Clock3 size={16} /> {simulatorRunning === 'velocity-burst' ? 'Running…' : 'Rapid Velocity Burst (6 txns)'}
                 </button>
-                <button type="button" className="scenario-card" onClick={() => void runSimulatorScenario(1250, 'NEW-PAYEE-FIRST', 'First-time payee scenario')}>
-                  <Bot size={16} /> First-Time New Payee
+                <button type="button" className="scenario-card" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('new-payee')}>
+                  <Bot size={16} /> {simulatorRunning === 'new-payee' ? 'Running…' : 'First-Time New Payee'}
                 </button>
-                <button type="button" className="scenario-card danger" onClick={() => void runSimulatorScenario(52000, 'DAILY-LIMIT-EX', 'Daily cumulative limit pressure')}>
-                  <ShieldAlert size={16} /> Daily Limit Exceeded
+                <button type="button" className="scenario-card danger" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('daily-limit')}>
+                  <ShieldAlert size={16} /> {simulatorRunning === 'daily-limit' ? 'Running…' : 'Daily Limit Exceeded (6 txns)'}
+                </button>
+                <button type="button" className="scenario-card danger" disabled={simulatorRunning !== null} onClick={() => void runSimulatorScenario('sdn-match')}>
+                  <ShieldAlert size={16} /> {simulatorRunning === 'sdn-match' ? 'Running…' : 'OFAC SDN Sanctions Match'}
                 </button>
               </div>
             </article>
+
+            {simulatorResult ? (
+              <article className="card">
+                <h3>Last Run: {simulatorResult.scenario}</h3>
+                <p className="muted">{simulatorResult.description}</p>
+
+                <h4>Transactions Created ({simulatorResult.transactions.length})</h4>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Account</th>
+                      <th>Payee</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {simulatorResult.transactions.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{entry.id}</td>
+                        <td>{entry.accountId}</td>
+                        <td>{entry.payeeName ?? entry.payeeId}</td>
+                        <td>{formatCurrency(entry.amount, entry.currency)}</td>
+                        <td><span className={`badge tx-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h4>Alerts Generated ({simulatorResult.alerts.length})</h4>
+                {simulatorResult.alerts.length === 0 ? (
+                  <p className="muted">No alerts generated for this scenario.</p>
+                ) : (
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Rule</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Message</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {simulatorResult.alerts.map((entry) => (
+                        <tr key={entry.id}>
+                          <td>{entry.ruleName}</td>
+                          <td><span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span></td>
+                          <td><span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
+                          <td>{entry.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </article>
+            ) : null}
           </section>
         ) : null}
 
