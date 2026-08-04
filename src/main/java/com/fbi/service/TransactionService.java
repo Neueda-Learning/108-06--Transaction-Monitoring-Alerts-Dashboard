@@ -43,7 +43,7 @@ public class TransactionService {
             RuleEvaluationService ruleEvaluationService,
             SdnScreeningService sdnScreeningService,
             AlertRepository alertRepository,
-            MonitoringRuleRepository monitoringRuleRepository) {
+            MonitoringRuleRepository monitoringRuleRepository,
             RiskScoringService riskScoringService) {
         this.transactionRepository = transactionRepository;
         this.ruleEvaluationService = ruleEvaluationService;
