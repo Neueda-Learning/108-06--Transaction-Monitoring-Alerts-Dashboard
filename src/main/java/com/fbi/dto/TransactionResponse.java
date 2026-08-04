@@ -14,7 +14,8 @@ public record TransactionResponse(
     String country,
     TransactionStatus status,
     Instant occurredAt,
-    String description
+    String description,
+    Integer riskScore
 ) {
 }
 
