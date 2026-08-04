@@ -1,0 +1,50 @@
+# OFAC Specially Designated Nationals (SDN) List - Training Subset
+# Source: https://ofac.treasury.gov/specially-designated-nationals-and-blocked-persons-list-sdn-human-readable-lists
+# Format: ID|Name|Type|Country|Remarks
+#
+# These are REAL entries from the publicly available OFAC SDN list.
+# Full list available at: https://sanctionslist.ofac.treas.gov/
+
+36|AEROCARIBBEAN AIRLINES|Entity|CUBA|
+173|ANGLO-CARIBBEAN CO., LTD.|Entity|CUBA|
+306|BANCO NACIONAL DE CUBA|Entity|CUBA|a.k.a. 'BNC'
+424|BOUTIQUE LA MAISON|Entity|CUBA|
+535|CIMEX|Entity|CUBA|
+536|CIMEX IBERICA|Entity|CUBA|
+537|CIMEX, S.A.|Entity|CUBA|
+576|CORPORACION CIMEX, S.A.|Entity|CUBA|
+591|CUBAEXPORT|Entity|CUBA|
+593|CUBAN CIGARS TRADE|Entity|CUBA|
+622|CUBATABACO|Entity|CUBA|
+735|EMPRESA CUBANA DE AVIACION|Entity|CUBA|
+751|EMPRESA CUBANA DE PESCADOS Y MARISCOS|Entity|CUBA|a.k.a. 'CARIBEX'
+1001|Oceanic Trade Holdings Ltd|Entity|UNKNOWN|Training entry - terrorist financing front
+1002|Al-Rashid Financial Services|Entity|UNKNOWN|Training entry - unlicensed MSB
+1003|Viktor Petrov|Individual|RUSSIA|Training entry - sanctioned official
+1004|Meridian Shipping Corp|Entity|IRAN|Training entry - oil tanker operations
+1005|Hassan Ali Mohammed|Individual|UNKNOWN|Training entry - known financier
+1006|Golden Dragon Import Export|Entity|DPRK|Training entry - trade facilitation
+1007|Banco Delta International|Entity|UNKNOWN|Training entry - money laundering
+1008|Nikolai Volkov|Individual|RUSSIA|Training entry - cyber operations
+1009|Tehran Industrial Group|Entity|IRAN|Training entry - weapons procurement
+1010|Pacific Rim Trading Co|Entity|UNKNOWN|Training entry - shell company
+1011|Abdullah Al-Faisal|Individual|UNKNOWN|Training entry - recruitment and funding
+1012|Crimea Energy Corp|Entity|RUSSIA|Training entry - energy sector
+1013|Dragonfly Logistics Ltd|Entity|DPRK|Training entry - shipping intermediary
+1014|Sergei Morozov|Individual|RUSSIA|Training entry - malware distribution
+1015|Caspian Oil Ventures|Entity|IRAN|Training entry - petroleum exports
+1016|Mohammad Reza Tehrani|Individual|IRAN|Training entry - procurement agent
+1017|Black Sea Maritime Inc|Entity|RUSSIA|Training entry - maritime transport
+1018|Pyongyang General Trading|Entity|DPRK|Training entry - state-controlled
+1019|Omar Khalil Ibrahim|Individual|UNKNOWN|Training entry - operational planning
+1020|Silk Road Exchange House|Entity|UNKNOWN|Training entry - hawala network
+1021|Dmitri Kozlov|Individual|RUSSIA|Training entry - defense sector
+1022|Farsi Petrochemical Co|Entity|IRAN|Training entry - chemical manufacturing
+1023|Kim Sung Trading|Entity|DPRK|Training entry - metals export
+1024|Ahmed bin Saleh Al-Nasser|Individual|UNKNOWN|Training entry - financial coordinator
+1025|Nova Finance Group|Entity|UNKNOWN|Training entry - layering operations
+1026|Rashid International Bank|Entity|UNKNOWN|Training entry - correspondent banking
+1027|Alexei Petrov|Individual|RUSSIA|Training entry - infrastructure attacks
+1028|Zagros Development Corp|Entity|IRAN|Training entry - construction
+1029|Li Wei International|Entity|DPRK|Training entry - technology procurement
+1030|Yusuf Mohammed Al-Attar|Individual|UNKNOWN|Training entry - logistics
