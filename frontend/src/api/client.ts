@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '') ?? ''
 
 export class ApiError extends Error {
   status: number
@@ -16,7 +16,8 @@ interface RequestOptions extends RequestInit {
 
 function buildUrl(path: string, params?: RequestOptions['params']): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`
-  const url = new URL(`${API_BASE_URL}${cleanPath}`, window.location.origin)
+  const baseUrl = API_BASE_URL || window.location.origin
+  const url = new URL(cleanPath, `${baseUrl}/`)
 
   if (params) {
     Object.entries(params as Record<string, unknown>).forEach(([key, value]) => {
@@ -26,7 +27,11 @@ function buildUrl(path: string, params?: RequestOptions['params']): string {
     })
   }
 
-  return `${url.pathname}${url.search}`
+  if (!API_BASE_URL) {
+    return `${url.pathname}${url.search}`
+  }
+
+  return url.toString()
 }
 
 export async function apiRequest<T>(path: string, options?: RequestOptions): Promise<T> {
