@@ -146,13 +146,13 @@ function App() {
   const [aiError, setAiError] = useState<string | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
-  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'APPROVED' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
   const [txMinAmount, setTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
   const [txMaxAmount, setTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
 
   const [appliedTxSearch, setAppliedTxSearch] = useState(DEFAULT_TX_FILTERS.search)
-  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'APPROVED' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
   const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
   const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
@@ -293,7 +293,7 @@ function App() {
   const sortedAlerts = useMemo(() => {
     const severityRank: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }
     return [...filteredAlerts].sort((left, right) => {
-      let compareValue = 0
+      let compareValue: number
 
       if (alertSortColumn === 'id') {
         compareValue = left.id - right.id
@@ -517,14 +517,7 @@ function App() {
     const sortedTransactions = transactions
       .map((entry) => {
         const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
-        let status: 'CLEAN' | 'FLAGGED' | 'BLOCKED' = 'CLEAN'
-        if (linkedAlerts.length > 0) {
-          const hasHighActive = linkedAlerts.some(
-            (alert) => alert.severity === 'HIGH' && !['CLOSED', 'DISMISSED'].includes(alert.status),
-          )
-          status = hasHighActive ? 'BLOCKED' : 'FLAGGED'
-        }
-        return { ...entry, derivedStatus: status, linkedAlerts }
+        return { ...entry, derivedStatus: entry.status ?? 'APPROVED', linkedAlerts }
       })
       .filter((entry) => {
         const searchValue = appliedTxSearch.trim().toLowerCase()
@@ -1160,7 +1153,7 @@ function App() {
               </div>
               <select value={txStatusFilter} onChange={(event) => setTxStatusFilter(event.target.value as typeof txStatusFilter)}>
                 <option value="ALL">All Status</option>
-                <option value="CLEAN">CLEAN</option>
+                <option value="APPROVED">APPROVED</option>
                 <option value="FLAGGED">FLAGGED</option>
                 <option value="BLOCKED">BLOCKED</option>
               </select>
@@ -1217,7 +1210,7 @@ function App() {
                           <span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span>
                         </td>
                         <td>
-                          <span className={`badge tx-${entry.derivedStatus.toLowerCase()}`}>{entry.derivedStatus}</span>
+                          <span className={`badge tx-${(entry.derivedStatus ?? 'approved').toLowerCase()}`}>{entry.derivedStatus}</span>
                         </td>
                         <td>
                           <button type="button" className="ghost" onClick={() => setSelectedTxId(entry.id)}>

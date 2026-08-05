@@ -484,7 +484,8 @@ td .ghost {
 
 .st-closed,
 .st-dismissed,
-.tx-clean {
+.tx-clean,
+.tx-approved {
   background: rgba(16, 185, 129, 0.12);
   color: #059669;
   border-color: rgba(16, 185, 129, 0.28);
