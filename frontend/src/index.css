@@ -418,6 +418,26 @@ th {
   margin-bottom: 10px;
 }
 
+.alerts-filter-actions {
+  display: inline-flex;
+  justify-content: flex-start;
+}
+
+.sort-header {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.sort-header:hover {
+  color: var(--brand);
+}
+
 td .ghost {
   padding: 6px 10px;
   font-size: 0.75rem;
@@ -583,6 +603,13 @@ td .ghost {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.dashboard-summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .dashboard-summary-body {
@@ -871,4 +898,5 @@ td .ghost {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+
 }

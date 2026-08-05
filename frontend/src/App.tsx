@@ -7,6 +7,8 @@ import {
   Bell,
   Bot,
   Clock3,
+  Copy,
+  Download,
   FileCode2,
   LayoutDashboard,
   Moon,
@@ -107,6 +109,9 @@ type DashboardSummary = {
   actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
 }
 
+type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
+type AlertSortDirection = 'desc' | 'asc'
+
 function getAlertCreatedToastMessage(count: number) {
   return count === 1 ? 'Alert created' : `${count} alerts created`
 }
@@ -123,6 +128,16 @@ function App() {
 
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
+  const [alertFilterStatusDraft, setAlertFilterStatusDraft] = useState<AlertStatus | ''>('')
+  const [alertFilterSeverityDraft, setAlertFilterSeverityDraft] = useState<Severity | ''>('')
+  const [alertSearchAlertIdDraft, setAlertSearchAlertIdDraft] = useState('')
+  const [alertSearchTransactionIdDraft, setAlertSearchTransactionIdDraft] = useState('')
+  const [alertSearchAccountIdDraft, setAlertSearchAccountIdDraft] = useState('')
+  const [appliedAlertSearchAlertId, setAppliedAlertSearchAlertId] = useState('')
+  const [appliedAlertSearchTransactionId, setAppliedAlertSearchTransactionId] = useState('')
+  const [appliedAlertSearchAccountId, setAppliedAlertSearchAccountId] = useState('')
+  const [alertSortColumn, setAlertSortColumn] = useState<AlertSortColumn>('createdAt')
+  const [alertSortDirection, setAlertSortDirection] = useState<AlertSortDirection>('desc')
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
   const [alertNote, setAlertNote] = useState('')
   const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
@@ -254,9 +269,48 @@ function App() {
     return alerts.filter((entry) => {
       const statusMatch = alertFilterStatus ? entry.status === alertFilterStatus : true
       const severityMatch = alertFilterSeverity ? entry.severity === alertFilterSeverity : true
-      return statusMatch && severityMatch
+      const alertIdMatch = appliedAlertSearchAlertId
+        ? `${entry.id}`.toLowerCase().includes(appliedAlertSearchAlertId.trim().toLowerCase())
+        : true
+      const transactionIdMatch = appliedAlertSearchTransactionId
+        ? `${entry.transactionId}`.toLowerCase().includes(appliedAlertSearchTransactionId.trim().toLowerCase())
+        : true
+      const accountIdMatch = appliedAlertSearchAccountId
+        ? entry.accountId.toLowerCase().includes(appliedAlertSearchAccountId.trim().toLowerCase())
+        : true
+      return statusMatch && severityMatch && alertIdMatch && transactionIdMatch && accountIdMatch
     })
-  }, [alertFilterSeverity, alertFilterStatus, alerts])
+  }, [
+    alertFilterSeverity,
+    alertFilterStatus,
+    alerts,
+    appliedAlertSearchAlertId,
+    appliedAlertSearchTransactionId,
+    appliedAlertSearchAccountId,
+  ])
+
+  const sortedAlerts = useMemo(() => {
+    const severityRank: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }
+    return [...filteredAlerts].sort((left, right) => {
+      let compareValue = 0
+
+      if (alertSortColumn === 'id') {
+        compareValue = left.id - right.id
+      } else if (alertSortColumn === 'transactionId') {
+        compareValue = left.transactionId - right.transactionId
+      } else if (alertSortColumn === 'accountId') {
+        compareValue = left.accountId.localeCompare(right.accountId)
+      } else if (alertSortColumn === 'severity') {
+        compareValue = severityRank[left.severity] - severityRank[right.severity]
+      } else if (alertSortColumn === 'status') {
+        compareValue = left.status.localeCompare(right.status)
+      } else {
+        compareValue = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      }
+
+      return alertSortDirection === 'desc' ? -compareValue : compareValue
+    })
+  }, [alertSortColumn, alertSortDirection, filteredAlerts])
 
   const selectedAlert = useMemo(
     () => alerts.find((entry) => entry.id === selectedAlertId) ?? null,
@@ -424,6 +478,24 @@ function App() {
     setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
   }
 
+  const applyAlertFilters = () => {
+    setAlertFilterStatus(alertFilterStatusDraft)
+    setAlertFilterSeverity(alertFilterSeverityDraft)
+    setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
+    setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
+    setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
+  }
+
+  const toggleAlertSort = (column: AlertSortColumn) => {
+    if (alertSortColumn === column) {
+      setAlertSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))
+      return
+    }
+
+    setAlertSortColumn(column)
+    setAlertSortDirection('desc')
+  }
+
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
     [derivedTransactions, selectedTxId],
@@ -566,6 +638,63 @@ function App() {
     })
     setShowDashboardSummary(true)
   }, [dashboardSummaryDraft])
+
+  const buildDashboardSummaryExport = useCallback((summary: DashboardSummary) => {
+    const lines: string[] = []
+    lines.push('Transaction Monitoring Dashboard Summary')
+    lines.push(`Generated: ${summary.generatedAt}`)
+    lines.push('')
+    lines.push('Overview')
+    lines.push(summary.narrative)
+    lines.push('')
+    lines.push('Key Insights')
+    summary.insights.forEach((insight, index) => {
+      lines.push(`${index + 1}. ${insight}`)
+    })
+    lines.push('')
+    lines.push('Recommended Action Steps')
+    summary.actionSteps.forEach((step) => {
+      lines.push(`- [${step.priority}] ${step.title}`)
+      step.details.forEach((detail, index) => {
+        lines.push(`  ${index + 1}. ${detail}`)
+      })
+      lines.push('')
+    })
+    return lines.join('\n')
+  }, [])
+
+  const copyDashboardSummary = useCallback(async () => {
+    if (!dashboardSummary) {
+      toast.error('Generate summary first')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildDashboardSummaryExport(dashboardSummary))
+      showSuccessToast('Summary copied to clipboard')
+    } catch {
+      toast.error('Unable to copy summary from this browser context')
+    }
+  }, [buildDashboardSummaryExport, dashboardSummary, showSuccessToast])
+
+  const downloadDashboardSummary = useCallback(() => {
+    if (!dashboardSummary) {
+      toast.error('Generate summary first')
+      return
+    }
+
+    const fileContents = buildDashboardSummaryExport(dashboardSummary)
+    const fileBlob = new Blob([fileContents], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(fileBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dashboard-summary-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    showSuccessToast('Summary downloaded')
+  }, [buildDashboardSummaryExport, dashboardSummary, showSuccessToast])
 
   const saveTransaction = async (event: FormEvent) => {
     event.preventDefault()
@@ -867,10 +996,10 @@ function App() {
                 <h3>Alerts by Rule Type</h3>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 30 }}>
+                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 56, right: 12 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} />
-                      <YAxis dataKey="label" type="category" width={120} />
+                      <YAxis dataKey="label" type="category" width={156} />
                       <Tooltip />
                       <Bar dataKey="count" fill="#7c3aed" radius={[0, 6, 6, 0]} />
                     </BarChart>
@@ -940,10 +1069,20 @@ function App() {
                   <h3>AI Dashboard Summary</h3>
                   <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
                 </div>
-                <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
-                  <Bot size={15} />
-                  {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
-                </button>
+                <div className="dashboard-summary-actions">
+                  <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
+                    <Bot size={15} />
+                    {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={() => void copyDashboardSummary()} disabled={!dashboardSummary}>
+                    <Copy size={15} />
+                    Copy
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={downloadDashboardSummary} disabled={!dashboardSummary}>
+                    <Download size={15} />
+                    Download
+                  </button>
+                </div>
               </div>
 
               {showDashboardSummary && dashboardSummary ? (
@@ -956,6 +1095,7 @@ function App() {
                       <li key={insight}>{insight}</li>
                     ))}
                   </ul>
+
 
                   <h4 style={{ marginTop: '16px' }}>Recommended Action Steps</h4>
                   <div className="action-steps">
@@ -1158,7 +1298,7 @@ function App() {
               <h3>Filter Alerts</h3>
               <label>
                 Status
-                <select value={alertFilterStatus} onChange={(event) => setAlertFilterStatus(event.target.value as AlertStatus | '')}>
+                <select value={alertFilterStatusDraft} onChange={(event) => setAlertFilterStatusDraft(event.target.value as AlertStatus | '')}>
                   <option value="">All</option>
                   {STATUSES.map((entry) => (
                     <option key={entry} value={entry}>{entry}</option>
@@ -1167,32 +1307,106 @@ function App() {
               </label>
               <label>
                 Severity
-                <select value={alertFilterSeverity} onChange={(event) => setAlertFilterSeverity(event.target.value as Severity | '')}>
+                <select value={alertFilterSeverityDraft} onChange={(event) => setAlertFilterSeverityDraft(event.target.value as Severity | '')}>
                   <option value="">All</option>
                   {SEVERITIES.map((entry) => (
                     <option key={entry} value={entry}>{entry}</option>
                   ))}
                 </select>
               </label>
+              <label>
+                Alert ID
+                <input
+                  placeholder="e.g. 120"
+                  value={alertSearchAlertIdDraft}
+                  onChange={(event) => setAlertSearchAlertIdDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                Transaction ID
+                <input
+                  placeholder="e.g. 4501"
+                  value={alertSearchTransactionIdDraft}
+                  onChange={(event) => setAlertSearchTransactionIdDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                Account ID
+                <input
+                  placeholder="e.g. ACC-001"
+                  value={alertSearchAccountIdDraft}
+                  onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
+                />
+              </label>
+              <div className="span-2 alerts-filter-actions">
+                <button type="button" className="primary" onClick={applyAlertFilters}>Filter</button>
+              </div>
             </section>
 
             <section className="card">
-              <h3>Investigation Queue ({filteredAlerts.length})</h3>
-              <div className="alerts-grid">
-                {filteredAlerts.map((entry) => (
-                  <article key={entry.id} className="alert-card">
-                    <div className="alert-head">
-                      <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
-                      <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
-                    </div>
-                    <h4>{entry.ruleName}</h4>
-                    <p className="muted">{entry.message}</p>
-                    <p className="mono">AL-{entry.id} | ACC-{entry.accountId}</p>
-                    <button type="button" className="primary" onClick={() => setSelectedAlertId(entry.id)}>
-                      Investigate
-                    </button>
-                  </article>
-                ))}
+              <h3>Investigation Queue ({sortedAlerts.length})</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('id')}>
+                          Alert ID {alertSortColumn === 'id' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('transactionId')}>
+                          Transaction ID {alertSortColumn === 'transactionId' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('accountId')}>
+                          Account ID {alertSortColumn === 'accountId' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('severity')}>
+                          Severity {alertSortColumn === 'severity' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('status')}>
+                          Status {alertSortColumn === 'status' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>Rule</th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('createdAt')}>
+                          Created {alertSortColumn === 'createdAt' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedAlerts.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="mono">AL-{entry.id}</td>
+                        <td className="mono">TX-{entry.transactionId}</td>
+                        <td className="mono">{entry.accountId}</td>
+                        <td><span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span></td>
+                        <td><span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
+                        <td>{entry.ruleName}</td>
+                        <td className="mono">{formatDate(entry.createdAt)}</td>
+                        <td>
+                          <button type="button" className="primary" onClick={() => setSelectedAlertId(entry.id)}>
+                            Investigate
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!sortedAlerts.length ? (
+                      <tr>
+                        <td colSpan={8} className="muted">No alerts match the selected filters.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             </section>
 
