@@ -35,6 +35,7 @@ import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
+import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import type {
   AlertResponse,
@@ -46,6 +47,7 @@ import type {
   SimulationResult,
   TransactionResponse,
 } from './api/types'
+import type { InvestigationNote } from './models/alertModels'
 import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
@@ -89,6 +91,8 @@ const TX_CREATE_PLACEHOLDERS = {
   payeeId: 'PAYEE-008',
   amount: '5000',
   currency: 'USD',
+}
+
 const DEFAULT_TX_FILTERS = {
   search: '',
   status: 'ALL' as const,
@@ -114,9 +118,9 @@ function App() {
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
-  const [alertNote, setAlertNote] = useState('')
-  const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
-  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
+  const [openInvestigation, setOpenInvestigation] = useState(false)
+  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
+  const [pendingAlertStatus, setPendingAlertStatus] = useState<AlertStatus | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
   const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
@@ -247,6 +251,19 @@ function App() {
     [alerts, selectedAlertId],
   )
 
+  const selectedAlertForDialog = useMemo(() => {
+    if (!selectedAlert) {
+      return null
+    }
+    if (!pendingAlertStatus || pendingAlertStatus === selectedAlert.status) {
+      return selectedAlert
+    }
+    return {
+      ...selectedAlert,
+      status: pendingAlertStatus,
+    }
+  }, [pendingAlertStatus, selectedAlert])
+
   const chartData = useMemo(() => {
     const txBuckets = Array.from({ length: 8 }, (_, index) => ({ label: `${index * 3}h`, count: 0 }))
     transactions.forEach((entry) => {
@@ -360,7 +377,16 @@ function App() {
     const createdTransaction = sortedTransactions[createdTransactionIndex]
     const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
     return [createdTransaction, ...withoutCreatedTransaction]
-  }, [alertsByTransaction, createdTxId, transactions, txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [
+    alertsByTransaction,
+    appliedTxMaxAmount,
+    appliedTxMinAmount,
+    appliedTxSearch,
+    appliedTxSortBy,
+    appliedTxStatusFilter,
+    createdTxId,
+    transactions,
+  ])
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -379,12 +405,34 @@ function App() {
 
   useEffect(() => {
     setCreatedTxId(null)
-  }, [txSearch, txStatusFilter, txMinAmount, txMaxAmount, txSortBy])
+  }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
     [derivedTransactions, selectedTxId],
   )
+
+  const applyTransactionFilters = useCallback(() => {
+    setAppliedTxSearch(txSearch)
+    setAppliedTxStatusFilter(txStatusFilter)
+    setAppliedTxMinAmount(txMinAmount)
+    setAppliedTxMaxAmount(txMaxAmount)
+    setAppliedTxSortBy(txSortBy)
+  }, [txMaxAmount, txMinAmount, txSearch, txSortBy, txStatusFilter])
+
+  const resetTransactionFilters = useCallback(() => {
+    setTxSearch(DEFAULT_TX_FILTERS.search)
+    setTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setAppliedTxSearch(DEFAULT_TX_FILTERS.search)
+    setAppliedTxStatusFilter(DEFAULT_TX_FILTERS.status)
+    setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
+    setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
+    setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setCreatedTxId(null)
+  }, [])
 
   const saveTransaction = async (event: FormEvent) => {
     event.preventDefault()
@@ -416,26 +464,62 @@ function App() {
     }
   }
 
-  const moveAlertStatus = async (event: FormEvent) => {
-    event.preventDefault()
+  const openInvestigateDialog = useCallback((alertId: number) => {
+    setSelectedAlertId(alertId)
+    setPendingAlertStatus(null)
+    setOpenInvestigation(true)
+  }, [])
+
+  const closeInvestigateDialog = useCallback(() => {
+    setOpenInvestigation(false)
+    setSelectedAlertId(null)
+    setPendingAlertStatus(null)
+  }, [])
+
+  const handleWorkflowStatusChange = useCallback((status: AlertStatus) => {
+    setPendingAlertStatus(status)
+  }, [])
+
+  const postInvestigationNote = useCallback(async (content: string) => {
+    if (!selectedAlert) {
+      return
+    }
+    const nextNote: InvestigationNote = {
+      id: Date.now(),
+      alertId: selectedAlert.id,
+      operatorName: 'Current User',
+      content,
+      createdAt: new Date().toISOString(),
+    }
+    setNotesByAlertId((prev) => ({
+      ...prev,
+      [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), nextNote],
+    }))
+  }, [selectedAlert])
+
+  const saveInvestigation = useCallback(async () => {
     if (!selectedAlert) {
       return
     }
     setError(null)
     try {
-      await updateAlertStatus(selectedAlert.id, { status: nextStatus, note: alertNote })
-      if (alertNote.trim()) {
-        setNotesByAlertId((prev) => ({
-          ...prev,
-          [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), alertNote.trim()],
-        }))
+      const statusToPersist = pendingAlertStatus ?? selectedAlert.status
+
+      if (statusToPersist !== selectedAlert.status) {
+        await updateAlertStatus(selectedAlert.id, { status: statusToPersist })
+        const statusLabel = statusToPersist.charAt(0) + statusToPersist.slice(1).toLowerCase()
+        showSuccessToast(`Alert status updated to ${statusLabel}`)
+      } else {
+        showSuccessToast('Investigation saved')
       }
-      setAlertNote('')
+
       await loadAll()
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Failed to update alert')
+      setPendingAlertStatus(null)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save investigation')
+      throw saveError
     }
-  }
+  }, [loadAll, pendingAlertStatus, selectedAlert, showSuccessToast])
 
   const submitRule = async (event: FormEvent) => {
     event.preventDefault()
@@ -714,8 +798,8 @@ function App() {
                             type="button"
                             className="ghost"
                             onClick={() => {
-                              setSelectedAlertId(entry.id)
                               setActiveTab('alerts')
+                              openInvestigateDialog(entry.id)
                             }}
                           >
                             Investigate
@@ -940,56 +1024,13 @@ function App() {
                     <h4>{entry.ruleName}</h4>
                     <p className="muted">{entry.message}</p>
                     <p className="mono">AL-{entry.id} | ACC-{entry.accountId}</p>
-                    <button type="button" className="primary" onClick={() => setSelectedAlertId(entry.id)}>
+                    <button type="button" className="primary" onClick={() => openInvestigateDialog(entry.id)}>
                       Investigate
                     </button>
                   </article>
                 ))}
               </div>
             </section>
-
-            {selectedAlert ? (
-              <Modal isOpen={selectedAlert !== null} onClose={() => setSelectedAlertId(null)} titleId="alert-investigation-modal-title">
-                <form className="form-grid" onSubmit={moveAlertStatus}>
-                  <h3 id="alert-investigation-modal-title">Alert Investigation - AL-{selectedAlert.id}</h3>
-                  <p className="muted span-2">{selectedAlert.message}</p>
-                  <label>
-                    Next Status
-                    <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AlertStatus)}>
-                      {STATUSES.filter((entry) => entry !== 'OPEN').map((entry) => (
-                        <option key={entry} value={entry}>{entry}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="span-2">
-                    Analyst Notes
-                    <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
-                  </label>
-                  <button className="primary" type="submit">Update Alert Status</button>
-
-                  <div className="span-2 timeline-wrap">
-                    <h4>Audit Trail</h4>
-                    <ul>
-                      <li>Created: {formatDate(selectedAlert.createdAt)}</li>
-                      <li>Acknowledged: {formatDate(selectedAlert.acknowledgedAt)}</li>
-                      <li>Investigating: {formatDate(selectedAlert.investigatingAt)}</li>
-                      <li>Closed: {formatDate(selectedAlert.closedAt)}</li>
-                      <li>Dismissed: {formatDate(selectedAlert.dismissedAt)}</li>
-                    </ul>
-                  </div>
-
-                  <div className="span-2">
-                    <h4>Notes History</h4>
-                    <ul>
-                      {(notesByAlertId[selectedAlert.id] ?? []).map((note, index) => (
-                        <li key={`${selectedAlert.id}-note-${index}`}>{note}</li>
-                      ))}
-                      {!notesByAlertId[selectedAlert.id]?.length ? <li className="muted">No notes added yet.</li> : null}
-                    </ul>
-                  </div>
-                </form>
-              </Modal>
-            ) : null}
           </div>
         ) : null}
 
@@ -1255,6 +1296,16 @@ function App() {
         ) : null}
 
         {loading ? <p className="muted">Loading latest data...</p> : null}
+
+        <InvestigationDialog
+          open={openInvestigation && selectedAlertForDialog !== null}
+          alert={selectedAlertForDialog}
+          notes={selectedAlert ? (notesByAlertId[selectedAlert.id] ?? []) : []}
+          onClose={closeInvestigateDialog}
+          onWorkflowStatusChange={handleWorkflowStatusChange}
+          onPostNote={postInvestigationNote}
+          onSaveInvestigation={saveInvestigation}
+        />
       </section>
     </div>
   )

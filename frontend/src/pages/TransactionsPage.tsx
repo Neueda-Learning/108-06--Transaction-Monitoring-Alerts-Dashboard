@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { toast } from 'react-hot-toast'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
 import type { TransactionResponse } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
@@ -56,6 +55,7 @@ export function TransactionsPage() {
   const [createdTransactionId, setCreatedTransactionId] = useState<number | null>(null)
   const resultsRef = useRef<HTMLElement | null>(null)
   const [createFormKey, setCreateFormKey] = useState(0)
+  const pageSize = 8
 
   const [createForm, setCreateForm] = useState(() => createEmptyCreateForm())
 
@@ -103,6 +103,23 @@ export function TransactionsPage() {
 
     resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [createdTransactionId, transactions])
+
+  const filteredTransactions = filterItemsByText(transactions, search, (transaction) => [
+    transaction.accountId,
+    transaction.payeeId,
+    transaction.payeeName,
+    transaction.description,
+    transaction.currency,
+    transaction.status,
+    transaction.id,
+  ])
+
+  const pageCount = getPageCount(filteredTransactions.length, pageSize)
+  const visibleTransactions = paginateItems(filteredTransactions, page, pageSize)
+
+  useEffect(() => {
+    setPage(1)
+  }, [filters, search])
 
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -311,7 +328,7 @@ export function TransactionsPage() {
       </section>
 
       <section ref={resultsRef} className="panel">
-        <h3>Transaction Results ({transactions.length})</h3>
+        <h3>Transaction Results ({filteredTransactions.length})</h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -326,7 +343,7 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((transaction) => (
+              {visibleTransactions.map((transaction) => (
                 <tr
                   key={transaction.id}
                   id={`transaction-row-${transaction.id}`}
