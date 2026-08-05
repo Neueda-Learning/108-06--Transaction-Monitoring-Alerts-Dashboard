@@ -127,8 +127,10 @@ function App() {
 
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
+  const [alertFilterRuleType, setAlertFilterRuleType] = useState<RuleType | ''>('')
   const [alertFilterStatusDraft, setAlertFilterStatusDraft] = useState<AlertStatus | ''>('')
   const [alertFilterSeverityDraft, setAlertFilterSeverityDraft] = useState<Severity | ''>('')
+  const [alertFilterRuleTypeDraft, setAlertFilterRuleTypeDraft] = useState<RuleType | ''>('')
   const [alertSearchAlertIdDraft, setAlertSearchAlertIdDraft] = useState('')
   const [alertSearchTransactionIdDraft, setAlertSearchTransactionIdDraft] = useState('')
   const [alertSearchAccountIdDraft, setAlertSearchAccountIdDraft] = useState('')
@@ -270,6 +272,7 @@ function App() {
     return alerts.filter((entry) => {
       const statusMatch = alertFilterStatus ? entry.status === alertFilterStatus : true
       const severityMatch = alertFilterSeverity ? entry.severity === alertFilterSeverity : true
+      const ruleTypeMatch = alertFilterRuleType ? entry.ruleType === alertFilterRuleType : true
       const alertIdMatch = appliedAlertSearchAlertId
         ? `${entry.id}`.toLowerCase().includes(appliedAlertSearchAlertId.trim().toLowerCase())
         : true
@@ -279,11 +282,12 @@ function App() {
       const accountIdMatch = appliedAlertSearchAccountId
         ? entry.accountId.toLowerCase().includes(appliedAlertSearchAccountId.trim().toLowerCase())
         : true
-      return statusMatch && severityMatch && alertIdMatch && transactionIdMatch && accountIdMatch
+      return statusMatch && severityMatch && ruleTypeMatch && alertIdMatch && transactionIdMatch && accountIdMatch
     })
   }, [
     alertFilterSeverity,
     alertFilterStatus,
+    alertFilterRuleType,
     alerts,
     appliedAlertSearchAlertId,
     appliedAlertSearchTransactionId,
@@ -502,16 +506,43 @@ function App() {
   const applyAlertFilters = useCallback(() => {
     setAlertFilterStatus(alertFilterStatusDraft)
     setAlertFilterSeverity(alertFilterSeverityDraft)
+    setAlertFilterRuleType(alertFilterRuleTypeDraft)
     setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
     setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
     setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
   }, [
     alertFilterStatusDraft,
     alertFilterSeverityDraft,
+    alertFilterRuleTypeDraft,
     alertSearchAlertIdDraft,
     alertSearchTransactionIdDraft,
     alertSearchAccountIdDraft,
   ])
+
+  const resetAlertFilters = useCallback(() => {
+    setAlertFilterStatus('')
+    setAlertFilterSeverity('')
+    setAlertFilterRuleType('')
+    setAlertFilterStatusDraft('')
+    setAlertFilterSeverityDraft('')
+    setAlertFilterRuleTypeDraft('')
+    setAlertSearchAlertIdDraft('')
+    setAlertSearchTransactionIdDraft('')
+    setAlertSearchAccountIdDraft('')
+    setAppliedAlertSearchAlertId('')
+    setAppliedAlertSearchTransactionId('')
+    setAppliedAlertSearchAccountId('')
+  }, [])
+
+  const toggleAlertSort = useCallback((column: AlertSortColumn) => {
+    if (alertSortColumn === column) {
+      setAlertSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setAlertSortColumn(column)
+    setAlertSortDirection('asc')
+  }, [alertSortColumn])
 
   const derivedTransactions = useMemo(() => {
     const sortedTransactions = transactions
@@ -1259,73 +1290,64 @@ function App() {
         {activeTab === 'alerts' ? (
           <div className="panel-stack">
 
-            <section className="card form-grid">
+            <section className="card">
               <h3>Filter Alerts</h3>
-              <label>
-                Status
-                <select value={alertFilterStatusDraft} onChange={(event) => setAlertFilterStatusDraft(event.target.value as AlertStatus | '')}>
-                  <option value="">All</option>
-                  {STATUSES.map((entry) => (
-                    <option key={entry} value={entry}>{entry}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Severity
-                <select value={alertFilterSeverityDraft} onChange={(event) => setAlertFilterSeverityDraft(event.target.value as Severity | '')}>
-                  <option value="">All</option>
-                  {SEVERITIES.map((entry) => (
-                    <option key={entry} value={entry}>{entry}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Alert ID
-                <input
-                  placeholder="e.g. 120"
-                  value={alertSearchAlertIdDraft}
-                  onChange={(event) => setAlertSearchAlertIdDraft(event.target.value)}
-                />
-              </label>
-              <label>
-                Transaction ID
-                <input
-                  placeholder="e.g. 4501"
-                  value={alertSearchTransactionIdDraft}
-                  onChange={(event) => setAlertSearchTransactionIdDraft(event.target.value)}
-                />
-              </label>
-              <label>
-                Account ID
-                <input
-                  placeholder="e.g. ACC-001"
-                  value={alertSearchAccountIdDraft}
-                  onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
-                />
-              </label>
-              <label>
-                Sort By
-                <select value={alertSortColumn} onChange={(event) => setAlertSortColumn(event.target.value as AlertSortColumn)}>
-                  <option value="createdAt">Created</option>
-                  <option value="id">Alert ID</option>
-                  <option value="transactionId">Transaction ID</option>
-                  <option value="accountId">Account</option>
-                  <option value="severity">Severity</option>
-                  <option value="status">Status</option>
-                </select>
-              </label>
-              <label>
-                Direction
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={() => setAlertSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-                >
-                  {alertSortDirection === 'desc' ? 'Descending' : 'Ascending'}
-                </button>
-              </label>
-              <div className="span-2 alerts-filter-actions">
-                <button type="button" className="primary" onClick={applyAlertFilters}>Filter</button>
+              <div className="alerts-filter-row">
+                <label>
+                  Alert ID
+                  <input
+                    placeholder="e.g. 120"
+                    value={alertSearchAlertIdDraft}
+                    onChange={(event) => setAlertSearchAlertIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Tid
+                  <input
+                    placeholder="e.g. 4501"
+                    value={alertSearchTransactionIdDraft}
+                    onChange={(event) => setAlertSearchTransactionIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Acc Id
+                  <input
+                    placeholder="e.g. ACC-001"
+                    value={alertSearchAccountIdDraft}
+                    onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Severity
+                  <select value={alertFilterSeverityDraft} onChange={(event) => setAlertFilterSeverityDraft(event.target.value as Severity | '')}>
+                    <option value="">All</option>
+                    {SEVERITIES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Rule Type
+                  <select value={alertFilterRuleTypeDraft} onChange={(event) => setAlertFilterRuleTypeDraft(event.target.value as RuleType | '')}>
+                    <option value="">All</option>
+                    {RULE_TYPES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select value={alertFilterStatusDraft} onChange={(event) => setAlertFilterStatusDraft(event.target.value as AlertStatus | '')}>
+                    <option value="">All</option>
+                    {STATUSES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="alerts-filter-actions">
+                  <button type="button" className="primary alerts-filter-submit" onClick={applyAlertFilters}>Apply Filter</button>
+                  <button type="button" className="ghost alerts-filter-submit" onClick={resetAlertFilters}>Reset Filter</button>
+                </div>
               </div>
             </section>
 
@@ -1335,13 +1357,29 @@ function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Alert ID</th>
-                      <th>Severity</th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('id')}>
+                          Alert ID {alertSortColumn === 'id' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('severity')}>
+                          Severity {alertSortColumn === 'severity' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
                       <th>Triggered Rule</th>
                       <th>Related Account</th>
                       <th>Related Txns</th>
-                      <th>Current Status</th>
-                      <th>Created Time</th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('status')}>
+                          Current Status {alertSortColumn === 'status' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('createdAt')}>
+                          Created Time {alertSortColumn === 'createdAt' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
                       <th>Action</th>
                     </tr>
                   </thead>
