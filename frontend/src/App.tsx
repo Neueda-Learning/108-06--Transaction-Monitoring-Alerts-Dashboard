@@ -1051,7 +1051,6 @@ function App() {
                 <div className="dashboard-summary-body">
                   <p className="muted">
                     Generated: {dashboardSummary.generatedAt}
-                    {dashboardSummary.model ? ` \u00b7 ${dashboardSummary.model}` : ''}
                   </p>
                   <p>{dashboardSummary.narrative}</p>
                   <h4>Key Insights</h4>
