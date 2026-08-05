@@ -34,12 +34,14 @@ import {
 import { toast } from 'react-hot-toast'
 import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
+import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import type {
+  AiDashboardSummaryResponse,
   AiInvestigationResponse,
   AlertResponse,
   AlertStatus,
@@ -104,12 +106,7 @@ const DEFAULT_TX_FILTERS = {
   sortBy: 'TIME_DESC' as const,
 }
 
-type DashboardSummary = {
-  generatedAt: string
-  narrative: string
-  insights: string[]
-  actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
-}
+type DashboardSummary = AiDashboardSummaryResponse
 
 type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
 type AlertSortDirection = 'desc' | 'asc'
@@ -190,6 +187,8 @@ function App() {
 
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
   const [showDashboardSummary, setShowDashboardSummary] = useState(false)
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false)
+  const [dashboardSummaryError, setDashboardSummaryError] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -409,7 +408,7 @@ function App() {
     ].join('\n')
   }, [])
 
-  const generateDashboardSummary = useCallback(() => {
+  const buildLocalDashboardSummary = useCallback((): DashboardSummary => {
     const openAlerts = alerts.filter((entry) => entry.status !== 'CLOSED' && entry.status !== 'DISMISSED')
     const criticalOpen = openAlerts.filter((entry) => entry.severity === 'CRITICAL')
     const highOpen = openAlerts.filter((entry) => entry.severity === 'HIGH')
@@ -450,14 +449,30 @@ function App() {
       })
     }
 
-    setDashboardSummary({
+    return {
       generatedAt: new Date().toLocaleString(),
       narrative,
       insights,
       actionSteps,
-    })
-    setShowDashboardSummary(true)
+      model: 'local-heuristic',
+    }
   }, [alerts, transactions, rules])
+
+  const generateDashboardSummary = useCallback(async () => {
+    setDashboardSummaryLoading(true)
+    setDashboardSummaryError(null)
+    try {
+      const result = await generateAiDashboardSummary()
+      setDashboardSummary(result)
+    } catch (summaryRequestError) {
+      const message = summaryRequestError instanceof Error ? summaryRequestError.message : 'AI summary generation failed'
+      setDashboardSummaryError(`${message} - showing a locally computed summary instead.`)
+      setDashboardSummary(buildLocalDashboardSummary())
+    } finally {
+      setDashboardSummaryLoading(false)
+      setShowDashboardSummary(true)
+    }
+  }, [buildLocalDashboardSummary])
 
   const copyDashboardSummary = useCallback(async () => {
     if (!dashboardSummary) {
@@ -1017,9 +1032,14 @@ function App() {
                   <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
                 </div>
                 <div className="dashboard-summary-actions">
-                  <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
+                  <button
+                    className="primary dashboard-summary-btn"
+                    type="button"
+                    onClick={() => void generateDashboardSummary()}
+                    disabled={dashboardSummaryLoading}
+                  >
                     <Bot size={15} />
-                    {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                    {dashboardSummaryLoading ? 'Generating...' : dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
                   </button>
                   <button className="ghost dashboard-summary-btn" type="button" onClick={() => void copyDashboardSummary()} disabled={!dashboardSummary}>
                     <Copy size={15} />
@@ -1032,9 +1052,14 @@ function App() {
                 </div>
               </div>
 
+              {dashboardSummaryError ? <p className="error-text">{dashboardSummaryError}</p> : null}
+
               {showDashboardSummary && dashboardSummary ? (
                 <div className="dashboard-summary-body">
-                  <p className="muted">Generated: {dashboardSummary.generatedAt}</p>
+                  <p className="muted">
+                    Generated: {dashboardSummary.generatedAt}
+                    {dashboardSummary.model ? ` \u00b7 ${dashboardSummary.model}` : ''}
+                  </p>
                   <p>{dashboardSummary.narrative}</p>
                   <h4>Key Insights</h4>
                   <ul className="dashboard-summary-list">
