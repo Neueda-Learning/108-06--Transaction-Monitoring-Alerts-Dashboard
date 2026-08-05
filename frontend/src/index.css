@@ -421,6 +421,32 @@ th {
 .alerts-filter-actions {
   display: inline-flex;
   justify-content: flex-start;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.alerts-filter-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.alerts-filter-row label {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.alerts-filter-row input,
+.alerts-filter-row select {
+  width: 100%;
+}
+
+.alerts-filter-submit {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .sort-header {
@@ -432,6 +458,10 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .sort-header:hover {
