@@ -54,6 +54,16 @@ export interface AlertStatusUpdateRequest {
   note?: string
 }
 
+export interface AiInvestigationResponse {
+  alertId: number
+  riskLevel: string
+  summary: string
+  recommendation: string
+  keyFindings: string[]
+  model: string
+  generatedAt: string
+}
+
 export interface MonitoringRuleResponse {
   id: number
   name: string

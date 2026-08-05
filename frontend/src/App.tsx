@@ -7,6 +7,8 @@ import {
   Bell,
   Bot,
   Clock3,
+  Copy,
+  Download,
   FileCode2,
   LayoutDashboard,
   Moon,
@@ -30,7 +32,7 @@ import {
   YAxis,
 } from 'recharts'
 import { toast } from 'react-hot-toast'
-import { getAlerts, updateAlertStatus } from './api/alerts'
+import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
@@ -38,6 +40,7 @@ import { createTransaction, getTransactions } from './api/transactions'
 import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import type {
+  AiInvestigationResponse,
   AlertResponse,
   AlertStatus,
   MonitoringRuleRequest,
@@ -101,6 +104,16 @@ const DEFAULT_TX_FILTERS = {
   sortBy: 'TIME_DESC' as const,
 }
 
+type DashboardSummary = {
+  generatedAt: string
+  narrative: string
+  insights: string[]
+  actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
+}
+
+type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
+type AlertSortDirection = 'desc' | 'asc'
+
 function getAlertCreatedToastMessage(count: number) {
   return count === 1 ? 'Alert created' : `${count} alerts created`
 }
@@ -117,6 +130,16 @@ function App() {
 
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
+  const [alertFilterStatusDraft, setAlertFilterStatusDraft] = useState<AlertStatus | ''>('')
+  const [alertFilterSeverityDraft, setAlertFilterSeverityDraft] = useState<Severity | ''>('')
+  const [alertSearchAlertIdDraft, setAlertSearchAlertIdDraft] = useState('')
+  const [alertSearchTransactionIdDraft, setAlertSearchTransactionIdDraft] = useState('')
+  const [alertSearchAccountIdDraft, setAlertSearchAccountIdDraft] = useState('')
+  const [appliedAlertSearchAlertId, setAppliedAlertSearchAlertId] = useState('')
+  const [appliedAlertSearchTransactionId, setAppliedAlertSearchTransactionId] = useState('')
+  const [appliedAlertSearchAccountId, setAppliedAlertSearchAccountId] = useState('')
+  const [alertSortColumn, setAlertSortColumn] = useState<AlertSortColumn>('createdAt')
+  const [alertSortDirection, setAlertSortDirection] = useState<AlertSortDirection>('desc')
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
   const [openInvestigation, setOpenInvestigation] = useState(false)
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
@@ -161,6 +184,9 @@ function App() {
 
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
+
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
+  const [showDashboardSummary, setShowDashboardSummary] = useState(false)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -242,9 +268,48 @@ function App() {
     return alerts.filter((entry) => {
       const statusMatch = alertFilterStatus ? entry.status === alertFilterStatus : true
       const severityMatch = alertFilterSeverity ? entry.severity === alertFilterSeverity : true
-      return statusMatch && severityMatch
+      const alertIdMatch = appliedAlertSearchAlertId
+        ? `${entry.id}`.toLowerCase().includes(appliedAlertSearchAlertId.trim().toLowerCase())
+        : true
+      const transactionIdMatch = appliedAlertSearchTransactionId
+        ? `${entry.transactionId}`.toLowerCase().includes(appliedAlertSearchTransactionId.trim().toLowerCase())
+        : true
+      const accountIdMatch = appliedAlertSearchAccountId
+        ? entry.accountId.toLowerCase().includes(appliedAlertSearchAccountId.trim().toLowerCase())
+        : true
+      return statusMatch && severityMatch && alertIdMatch && transactionIdMatch && accountIdMatch
     })
-  }, [alertFilterSeverity, alertFilterStatus, alerts])
+  }, [
+    alertFilterSeverity,
+    alertFilterStatus,
+    alerts,
+    appliedAlertSearchAlertId,
+    appliedAlertSearchTransactionId,
+    appliedAlertSearchAccountId,
+  ])
+
+  const sortedAlerts = useMemo(() => {
+    const severityRank: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }
+    return [...filteredAlerts].sort((left, right) => {
+      let compareValue = 0
+
+      if (alertSortColumn === 'id') {
+        compareValue = left.id - right.id
+      } else if (alertSortColumn === 'transactionId') {
+        compareValue = left.transactionId - right.transactionId
+      } else if (alertSortColumn === 'accountId') {
+        compareValue = left.accountId.localeCompare(right.accountId)
+      } else if (alertSortColumn === 'severity') {
+        compareValue = severityRank[left.severity] - severityRank[right.severity]
+      } else if (alertSortColumn === 'status') {
+        compareValue = left.status.localeCompare(right.status)
+      } else {
+        compareValue = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      }
+
+      return alertSortDirection === 'desc' ? -compareValue : compareValue
+    })
+  }, [alertSortColumn, alertSortDirection, filteredAlerts])
 
   const selectedAlert = useMemo(
     () => alerts.find((entry) => entry.id === selectedAlertId) ?? null,
@@ -521,6 +586,24 @@ function App() {
     }
   }, [loadAll, pendingAlertStatus, selectedAlert, showSuccessToast])
 
+  const onInvestigateWithAi = async () => {
+    if (!selectedAlert) {
+      return
+    }
+    setAiLoading(true)
+    setAiError(null)
+    try {
+      const result = await investigateWithAi(selectedAlert.id)
+      setAiResult(result)
+    } catch (aiRequestError) {
+      const message = aiRequestError instanceof Error ? aiRequestError.message : 'AI investigation failed'
+      setAiError(message)
+      toast.error(message)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   const submitRule = async (event: FormEvent) => {
     event.preventDefault()
     const payload: MonitoringRuleRequest = {
@@ -752,10 +835,10 @@ function App() {
                 <h3>Alerts by Rule Type</h3>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 30 }}>
+                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 56, right: 12 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} />
-                      <YAxis dataKey="label" type="category" width={120} />
+                      <YAxis dataKey="label" type="category" width={156} />
                       <Tooltip />
                       <Bar dataKey="count" fill="#7c3aed" radius={[0, 6, 6, 0]} />
                     </BarChart>
@@ -817,6 +900,62 @@ function App() {
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section className="card dashboard-summary">
+              <div className="dashboard-summary-header">
+                <div>
+                  <h3>AI Dashboard Summary</h3>
+                  <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
+                </div>
+                <div className="dashboard-summary-actions">
+                  <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
+                    <Bot size={15} />
+                    {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={() => void copyDashboardSummary()} disabled={!dashboardSummary}>
+                    <Copy size={15} />
+                    Copy
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={downloadDashboardSummary} disabled={!dashboardSummary}>
+                    <Download size={15} />
+                    Download
+                  </button>
+                </div>
+              </div>
+
+              {showDashboardSummary && dashboardSummary ? (
+                <div className="dashboard-summary-body">
+                  <p className="muted">Generated: {dashboardSummary.generatedAt}</p>
+                  <p>{dashboardSummary.narrative}</p>
+                  <h4>Key Insights</h4>
+                  <ul className="dashboard-summary-list">
+                    {dashboardSummary.insights.map((insight) => (
+                      <li key={insight}>{insight}</li>
+                    ))}
+                  </ul>
+
+
+                  <h4 style={{ marginTop: '16px' }}>Recommended Action Steps</h4>
+                  <div className="action-steps">
+                    {dashboardSummary.actionSteps.map((step, index) => (
+                      <div key={index} className={`action-step action-step-${step.priority.toLowerCase()}`}>
+                        <div className="action-step-header">
+                          <span className={`action-priority-badge badge sev-${step.priority === 'CRITICAL' ? 'critical' : step.priority === 'HIGH' ? 'high' : 'medium'}`}>
+                            {step.priority}
+                          </span>
+                          <h5>{step.title}</h5>
+                        </div>
+                        <ol className="action-step-details">
+                          {step.details.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
         ) : null}
@@ -894,7 +1033,11 @@ function App() {
               </select>
               <input placeholder="Min Amount" value={txMinAmount} onChange={(event) => setTxMinAmount(event.target.value)} />
               <input placeholder="Max Amount" value={txMaxAmount} onChange={(event) => setTxMaxAmount(event.target.value)} />
-              <select value={txSortBy} onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}>
+              <select
+                className="tx-sort-select"
+                value={txSortBy}
+                onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}
+              >
                 <option value="TIME_DESC">Newest</option>
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
@@ -994,7 +1137,7 @@ function App() {
               <h3>Filter Alerts</h3>
               <label>
                 Status
-                <select value={alertFilterStatus} onChange={(event) => setAlertFilterStatus(event.target.value as AlertStatus | '')}>
+                <select value={alertFilterStatusDraft} onChange={(event) => setAlertFilterStatusDraft(event.target.value as AlertStatus | '')}>
                   <option value="">All</option>
                   {STATUSES.map((entry) => (
                     <option key={entry} value={entry}>{entry}</option>
@@ -1003,13 +1146,40 @@ function App() {
               </label>
               <label>
                 Severity
-                <select value={alertFilterSeverity} onChange={(event) => setAlertFilterSeverity(event.target.value as Severity | '')}>
+                <select value={alertFilterSeverityDraft} onChange={(event) => setAlertFilterSeverityDraft(event.target.value as Severity | '')}>
                   <option value="">All</option>
                   {SEVERITIES.map((entry) => (
                     <option key={entry} value={entry}>{entry}</option>
                   ))}
                 </select>
               </label>
+              <label>
+                Alert ID
+                <input
+                  placeholder="e.g. 120"
+                  value={alertSearchAlertIdDraft}
+                  onChange={(event) => setAlertSearchAlertIdDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                Transaction ID
+                <input
+                  placeholder="e.g. 4501"
+                  value={alertSearchTransactionIdDraft}
+                  onChange={(event) => setAlertSearchTransactionIdDraft(event.target.value)}
+                />
+              </label>
+              <label>
+                Account ID
+                <input
+                  placeholder="e.g. ACC-001"
+                  value={alertSearchAccountIdDraft}
+                  onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
+                />
+              </label>
+              <div className="span-2 alerts-filter-actions">
+                <button type="button" className="primary" onClick={applyAlertFilters}>Filter</button>
+              </div>
             </section>
 
             <section className="card">
