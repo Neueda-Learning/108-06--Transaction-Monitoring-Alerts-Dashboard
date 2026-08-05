@@ -38,10 +38,12 @@ public class SimulatorService {
 
     private final TransactionService transactionService;
     private final AlertRepository alertRepository;
+    private final MonitoringRuleService monitoringRuleService;
 
-    public SimulatorService(TransactionService transactionService, AlertRepository alertRepository) {
+    public SimulatorService(TransactionService transactionService, AlertRepository alertRepository, MonitoringRuleService monitoringRuleService) {
         this.transactionService = transactionService;
         this.alertRepository = alertRepository;
+        this.monitoringRuleService = monitoringRuleService;
     }
 
     public SimulationResult runScenario(String scenario) {
@@ -74,17 +76,37 @@ public class SimulatorService {
 
     private SimulationResult runAmountThreshold() {
         String account = randomAccountId();
-        MonitoredTransaction txn = createTransaction(account, randomPayeeId(), "International Wire Recipient", new BigDecimal("15000.00"), "High amount threshold breach");
+        // Find the highest amount threshold from all active AMOUNT_THRESHOLD rules
+        BigDecimal maxThreshold = monitoringRuleService.getActiveRules().stream()
+            .filter(rule -> rule.getType() == com.fbi.model.RuleType.AMOUNT_THRESHOLD)
+            .map(rule -> rule.getAmountThreshold())
+            .filter(threshold -> threshold != null)
+            .max(BigDecimal::compareTo)
+            .orElse(new BigDecimal("10000.00"));
+        
+        // Create a transaction slightly above the threshold to trigger it
+        BigDecimal amount = maxThreshold.multiply(new BigDecimal("1.5"));
+        MonitoredTransaction txn = createTransaction(account, randomPayeeId(), "International Wire Recipient", amount, "High amount threshold breach");
         return buildResult("amount-threshold", List.of(txn));
     }
 
     private SimulationResult runVelocityBurst() {
         String account = randomAccountId();
         String payee = randomPayeeId();
+        // Find the highest velocity count from all active VELOCITY rules
+        int maxVelocityCount = monitoringRuleService.getActiveRules().stream()
+            .filter(rule -> rule.getType() == com.fbi.model.RuleType.VELOCITY)
+            .map(rule -> rule.getVelocityCount())
+            .filter(count -> count != null)
+            .max(Integer::compareTo)
+            .orElse(5);
+        
+        // Create count+1 transactions to trigger the rule
         List<MonitoredTransaction> transactions = new ArrayList<>();
-        for (int i = 1; i <= 6; i++) {
+        int transactionCount = maxVelocityCount + 1;
+        for (int i = 1; i <= transactionCount; i++) {
             transactions.add(createTransaction(account, payee, "Rapid Transfer Recipient",
-                new BigDecimal("500.00"), "Velocity burst transaction " + i + " of 6"));
+                new BigDecimal("500.00"), "Velocity burst transaction " + i + " of " + transactionCount));
         }
         return buildResult("velocity-burst", transactions);
     }
@@ -98,6 +120,18 @@ public class SimulatorService {
     private SimulationResult runDailyLimit() {
         String account = randomAccountId();
         String payee = randomPayeeId();
+        // Find the highest daily limit from all active DAILY_LIMIT rules
+        BigDecimal maxDailyLimit = monitoringRuleService.getActiveRules().stream()
+            .filter(rule -> rule.getType() == com.fbi.model.RuleType.DAILY_LIMIT)
+            .map(rule -> rule.getDailyLimit())
+            .filter(limit -> limit != null)
+            .max(BigDecimal::compareTo)
+            .orElse(new BigDecimal("50000.00"));
+        
+        // Create 6 transactions that together exceed the daily limit
+        // Each transaction is slightly above 1/5 of the limit to ensure total exceeds it
+        BigDecimal perTransactionAmount = maxDailyLimit.divide(new BigDecimal("5"), 2, java.math.RoundingMode.HALF_UP);
+        
         // Spread transactions ~2 hours apart across the same day so the velocity rule's
         // 10-minute window never spans more than one transaction - keeping this scenario
         // a clean demonstration of the daily cumulative limit rule on its own.
@@ -107,7 +141,7 @@ public class SimulatorService {
         for (int i = 1; i <= 6; i++) {
             Instant occurredAt = start.plus((i - 1) * 2L, ChronoUnit.HOURS);
             transactions.add(createTransactionAt(account, payee, "Daily Limit Recipient",
-                new BigDecimal("9000.00"), "Daily cumulative limit pressure " + i + " of 6", occurredAt));
+                perTransactionAmount, "Daily cumulative limit pressure " + i + " of 6", occurredAt));
         }
         return buildResult("daily-limit", transactions);
     }
