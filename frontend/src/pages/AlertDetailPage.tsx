@@ -202,8 +202,6 @@ export function AlertDetailPage() {
             <dd>{aiResult.summary}</dd>
             <dt>Recommendation</dt>
             <dd>{aiResult.recommendation}</dd>
-            <dt>Model</dt>
-            <dd>{aiResult.model}</dd>
           </dl>
         ) : null}
       </section>

@@ -142,7 +142,6 @@ export function InvestigationDialog({
               <Typography variant="body2"><strong>Risk Level:</strong> {aiResult.riskLevel}</Typography>
               <Typography variant="body2"><strong>Summary:</strong> {aiResult.summary}</Typography>
               <Typography variant="body2"><strong>Recommendation:</strong> {aiResult.recommendation}</Typography>
-              <Typography variant="caption" sx={{ color: 'text.secondary' }}>Model: {aiResult.model}</Typography>
             </Box>
           ) : null}
         </Box>
