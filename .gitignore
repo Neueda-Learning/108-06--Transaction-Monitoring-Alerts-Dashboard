@@ -41,3 +41,6 @@ build/
 ### Local Spring configuration ###
 /src/main/resources/application-local.properties
 
+### Docker / environment secrets ###
+.env
+

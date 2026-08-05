@@ -1,0 +1,11 @@
+target/
+*.log
+*.xlsx
+.git/
+.gitignore
+.vscode/
+.idea/
+*.iml
+frontend/
+docs/
+*.md
