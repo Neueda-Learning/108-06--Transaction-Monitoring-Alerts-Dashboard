@@ -20,22 +20,24 @@ interface AlertHeaderCardProps {
   alert: Alert
 }
 
+const labelSx = { color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 } as const
+
 export function AlertHeaderCard({ alert }: AlertHeaderCardProps) {
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid #E2E8F0', mb: 3 }}>
       <CardContent sx={{ p: 3 }}>
-        <Grid container spacing={3} alignItems="flex-start">
-          <Grid item xs={12} sm={6} md={2}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+        <Grid container spacing={3} sx={{ alignItems: 'flex-start' }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+            <Typography variant="caption" sx={labelSx}>
               Alert ID
             </Typography>
-            <Typography variant="h6" fontWeight={700} mt={0.5}>
+            <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5 }}>
               {alert.alertRef}
             </Typography>
           </Grid>
 
-          <Grid item xs={6} sm={3} md={2}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+            <Typography variant="caption" sx={labelSx}>
               Severity
             </Typography>
             <br />
@@ -52,8 +54,8 @@ export function AlertHeaderCard({ alert }: AlertHeaderCardProps) {
             />
           </Grid>
 
-          <Grid item xs={6} sm={3} md={2}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+            <Typography variant="caption" sx={labelSx}>
               Status
             </Typography>
             <br />
@@ -70,29 +72,29 @@ export function AlertHeaderCard({ alert }: AlertHeaderCardProps) {
             />
           </Grid>
 
-          <Grid item xs={12} sm={6} md={3}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Typography variant="caption" sx={labelSx}>
               Rule Name
             </Typography>
-            <Typography variant="body2" fontWeight={600} mt={0.5}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5 }}>
               {alert.ruleName}
             </Typography>
           </Grid>
 
-          <Grid item xs={6} sm={3} md={2}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
+            <Typography variant="caption" sx={labelSx}>
               Rule Type
             </Typography>
-            <Typography variant="body2" mt={0.5} fontFamily="monospace" fontSize={12} color="text.secondary">
+            <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace', fontSize: 12, color: 'text.secondary' }}>
               {alert.ruleType}
             </Typography>
           </Grid>
 
-          <Grid item xs={6} sm={3} md={1}>
-            <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
+            <Typography variant="caption" sx={labelSx}>
               Account
             </Typography>
-            <Typography variant="body2" fontWeight={600} mt={0.5} fontFamily="monospace">
+            <Typography variant="body2" sx={{ fontWeight: 600, mt: 0.5, fontFamily: 'monospace' }}>
               {alert.accountId}
             </Typography>
           </Grid>

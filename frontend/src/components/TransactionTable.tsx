@@ -71,7 +71,7 @@ export function TransactionTable({ transactions, loading }: TransactionTableProp
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid #E2E8F0', mb: 3 }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={2}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2 }}>
           Related Triggering Transactions
         </Typography>
 

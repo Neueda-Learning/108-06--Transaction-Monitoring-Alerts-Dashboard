@@ -43,10 +43,12 @@ function formatDateTime(iso: string) {
 
 interface WorkflowActionsProps {
   currentStatus: WorkflowStatus
-  onWorkflowStatusChange: (status: WorkflowStatus) => void
+  onWorkflowStatusChange?: (status: WorkflowStatus) => void
+  onClose?: () => void | Promise<void>
+  onDismiss?: () => void | Promise<void>
 }
 
-export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: WorkflowActionsProps) {
+export function WorkflowActions({ currentStatus, onWorkflowStatusChange, onClose, onDismiss }: WorkflowActionsProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([
     {
       status: currentStatus,
@@ -78,10 +80,22 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: Workf
     ...(currentStatus !== 'DISMISSED' ? ['DISMISSED'] as WorkflowStatus[] : []),
   ]
 
+  const handleStatusClick = (status: WorkflowStatus) => {
+    if (status === 'CLOSED' && onClose) {
+      void onClose()
+      return
+    }
+    if (status === 'DISMISSED' && onDismiss) {
+      void onDismiss()
+      return
+    }
+    onWorkflowStatusChange?.(status)
+  }
+
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid #E2E8F0', mb: 3 }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={1.5}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
           Workflow
         </Typography>
 
@@ -133,17 +147,17 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: Workf
           })}
         </Box>
 
-        <Typography fontSize={11} color="text.secondary" fontWeight={600} letterSpacing={0.3} mb={1.25}>
+        <Typography sx={{ fontSize: 11, color: 'text.secondary', fontWeight: 600, letterSpacing: 0.3, mb: 1.25 }}>
           Update Workflow Status
         </Typography>
 
-        <Box display="flex" gap={1} flexWrap="wrap" mb={2.75}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2.75 }}>
           {remainingStatuses.map((status) => (
             <Button
               key={status}
               variant="outlined"
               size="small"
-              onClick={() => onWorkflowStatusChange(status)}
+              onClick={() => handleStatusClick(status)}
               sx={{
                 textTransform: 'none',
                 borderRadius: 2,
@@ -160,7 +174,7 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: Workf
             </Button>
           ))}
           {!remainingStatuses.length ? (
-            <Typography fontSize={12} color="text.secondary">
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
               No further workflow updates available.
             </Typography>
           ) : null}
@@ -170,15 +184,12 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: Workf
 
         <Typography
           variant="caption"
-          color="text.secondary"
-          fontWeight={600}
-          textTransform="uppercase"
-          letterSpacing={0.5}
+          sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}
         >
           History
         </Typography>
 
-        <Box mt={1.25} display="flex" flexDirection="column" gap={1}>
+        <Box sx={{ mt: 1.25, display: 'flex', flexDirection: 'column', gap: 1 }}>
           {[...history].reverse().map((entry, index) => {
             const colors = STATUS_COLOR[entry.status]
             return (
@@ -206,7 +217,7 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange }: Workf
                     minWidth: 96,
                   }}
                 />
-                <Typography fontSize={12} color="text.secondary">
+                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                   {entry.action} - {formatDateTime(entry.timestamp)} by Current User
                 </Typography>
               </Box>

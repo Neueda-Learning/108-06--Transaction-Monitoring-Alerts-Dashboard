@@ -151,7 +151,7 @@ export function AlertDetailsPage() {
       <Container maxWidth="xl">
 
         {/* Page header */}
-        <Box display="flex" alignItems="center" gap={1.5} mb={1}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
           <IconButton
             onClick={() => window.history.back()}
             size="small"
@@ -161,10 +161,10 @@ export function AlertDetailsPage() {
           </IconButton>
           <PolicyIcon sx={{ color: '#7C3AED', fontSize: 28 }} />
           <Box>
-            <Typography variant="h5" fontWeight={800} lineHeight={1.2}>
+            <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
               Transaction Monitoring & Alerts Dashboard
             </Typography>
-            <Typography variant="body2" color="text.secondary" fontSize={13}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 13 }}>
               Alert Investigation Details
             </Typography>
           </Box>
@@ -187,7 +187,7 @@ export function AlertDetailsPage() {
 
         {/* Transactions + Audit in a grid */}
         <Grid container spacing={3}>
-          <Grid item xs={12} lg={8}>
+          <Grid size={{ xs: 12, lg: 8 }}>
             {/* Transactions table */}
             <TransactionTable transactions={transactions} loading={txLoading} />
 
@@ -195,7 +195,7 @@ export function AlertDetailsPage() {
             <InvestigationNotes notes={notes} loading={notesLoading} onPost={handlePostNote} />
           </Grid>
 
-          <Grid item xs={12} lg={4}>
+          <Grid size={{ xs: 12, lg: 4 }}>
             {/* Audit timeline */}
             <AuditTimeline events={history} loading={historyLoading} />
           </Grid>

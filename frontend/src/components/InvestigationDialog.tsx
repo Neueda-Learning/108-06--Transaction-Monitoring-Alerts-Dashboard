@@ -1,4 +1,5 @@
 import CloseIcon from '@mui/icons-material/Close'
+import SmartToyIcon from '@mui/icons-material/SmartToy'
 import {
   Box,
   Button,
@@ -10,7 +11,7 @@ import {
   IconButton,
   Typography,
 } from '@mui/material'
-import type { AlertResponse, AlertStatus } from '../api/types'
+import type { AiInvestigationResponse, AlertResponse, AlertStatus } from '../api/types'
 import type { InvestigationNote } from '../models/alertModels'
 import { InvestigationNotes } from './InvestigationNotes'
 import { WorkflowActions } from './WorkflowActions'
@@ -23,6 +24,10 @@ interface InvestigationDialogProps {
   onWorkflowStatusChange: (status: AlertStatus) => void
   onPostNote: (content: string) => Promise<void>
   onSaveInvestigation: () => Promise<void> | void
+  aiResult: AiInvestigationResponse | null
+  aiLoading: boolean
+  aiError: string | null
+  onInvestigateWithAi: () => void | Promise<void>
 }
 
 function formatAlertRef(id: number) {
@@ -48,6 +53,10 @@ export function InvestigationDialog({
   onWorkflowStatusChange,
   onPostNote,
   onSaveInvestigation,
+  aiResult,
+  aiLoading,
+  aiError,
+  onInvestigateWithAi,
 }: InvestigationDialogProps) {
   if (!alert) return null
 
@@ -61,8 +70,10 @@ export function InvestigationDialog({
       maxWidth="md"
       fullWidth
       scroll="paper"
-      BackdropProps={{ sx: { backgroundColor: 'rgba(15, 23, 42, 0.62)' } }}
-      PaperProps={{ sx: { borderRadius: 3, border: '1px solid #E2E8F0' } }}
+      slotProps={{
+        backdrop: { sx: { backgroundColor: 'rgba(15, 23, 42, 0.62)' } },
+        paper: { sx: { borderRadius: 3, border: '1px solid #E2E8F0' } },
+      }}
     >
       <DialogTitle sx={{ pb: 1.25, pr: 6 }}>
         <Typography variant="h6" sx={{ fontWeight: 800 }}>Alert Investigation</Typography>
@@ -108,6 +119,33 @@ export function InvestigationDialog({
           notes={notes}
           onPost={onPostNote}
         />
+
+        <Box sx={{ mt: 2.5, pt: 2, borderTop: '1px solid #E2E8F0' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>AI Investigation</Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<SmartToyIcon fontSize="small" />}
+              onClick={() => void onInvestigateWithAi()}
+              disabled={aiLoading}
+              sx={{ textTransform: 'none' }}
+            >
+              {aiLoading ? 'Investigating...' : 'Investigate with AI'}
+            </Button>
+          </Box>
+          {aiError ? (
+            <Typography variant="body2" sx={{ color: 'error.main' }}>{aiError}</Typography>
+          ) : null}
+          {aiResult ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+              <Typography variant="body2"><strong>Risk Level:</strong> {aiResult.riskLevel}</Typography>
+              <Typography variant="body2"><strong>Summary:</strong> {aiResult.summary}</Typography>
+              <Typography variant="body2"><strong>Recommendation:</strong> {aiResult.recommendation}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>Model: {aiResult.model}</Typography>
+            </Box>
+          ) : null}
+        </Box>
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
