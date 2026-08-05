@@ -100,6 +100,13 @@ const DEFAULT_TX_FILTERS = {
   sortBy: 'TIME_DESC' as const,
 }
 
+type DashboardSummary = {
+  generatedAt: string
+  narrative: string
+  insights: string[]
+  actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
+}
+
 function getAlertCreatedToastMessage(count: number) {
   return count === 1 ? 'Alert created' : `${count} alerts created`
 }
@@ -163,6 +170,9 @@ function App() {
 
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
+
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
+  const [showDashboardSummary, setShowDashboardSummary] = useState(false)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -418,6 +428,144 @@ function App() {
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
     [derivedTransactions, selectedTxId],
   )
+
+  const dashboardSummaryDraft = useMemo(() => {
+    const unresolvedAlerts = alerts.filter((entry) => !['CLOSED', 'DISMISSED'].includes(entry.status)).length
+    const unresolvedRatio = alerts.length ? Math.round((unresolvedAlerts / alerts.length) * 100) : 0
+
+    const severeAlerts = alerts.filter((entry) => ['HIGH', 'CRITICAL'].includes(entry.severity)).length
+    const severeRatio = alerts.length ? Math.round((severeAlerts / alerts.length) * 100) : 0
+
+    const criticalAlerts = alerts.filter((entry) => entry.severity === 'CRITICAL').length
+    const highAlerts = alerts.filter((entry) => entry.severity === 'HIGH').length
+    const mediumAlerts = alerts.filter((entry) => entry.severity === 'MEDIUM').length
+
+    const blockedTransactions = new Set(
+      alerts
+        .filter((entry) => entry.severity === 'HIGH' && !['CLOSED', 'DISMISSED'].includes(entry.status))
+        .map((entry) => entry.transactionId),
+    ).size
+
+    const busiestWindow = chartData.txOverTime.reduce(
+      (top, bucket) => (bucket.count > top.count ? bucket : top),
+      chartData.txOverTime[0] ?? { label: '0h', count: 0 },
+    )
+
+    const topRule = chartData.byRule.reduce(
+      (top, entry) => (entry.count > top.count ? entry : top),
+      chartData.byRule[0] ?? { label: 'N/A', count: 0 },
+    )
+
+    const narrative =
+      metrics.totalTransactions === 0
+        ? 'No transactions have been recorded yet. Add transactions or run a simulator scenario to generate monitoring insights.'
+        : `The dashboard is monitoring ${metrics.totalTransactions} transactions (${formatCurrency(metrics.totalVolume, 'GBP')} total volume) with ${metrics.openAlerts} active alerts across ${metrics.activeRules} active rules.`
+
+    const insights = [
+      `Risk concentration: ${severeAlerts} of ${alerts.length || 0} alerts are HIGH or CRITICAL (${severeRatio}%).`,
+      `Operational queue: ${unresolvedAlerts} alerts are unresolved (${unresolvedRatio}% of all alerts).`,
+      `Transaction pressure: peak volume appears around ${busiestWindow.label} with ${busiestWindow.count} transactions in that bucket.`,
+      `Rule impact: ${topRule.label} is currently the most triggered rule type (${topRule.count} alerts).`,
+      `Containment signal: ${blockedTransactions} transactions are currently BLOCKED by high-severity active alerts.`,
+    ]
+
+    // Generate detailed action steps based on alert state
+    const actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }> = []
+
+    if (criticalAlerts > 0) {
+      actionSteps.push({
+        priority: 'CRITICAL',
+        title: `Escalate ${criticalAlerts} CRITICAL Alert${criticalAlerts > 1 ? 's' : ''}`,
+        details: [
+          `Immediately open the Alerts tab and filter by CRITICAL severity.`,
+          `Document the CRITICAL alert IDs and linked transaction details.`,
+          `Escalate findings to compliance team and senior management.`,
+          `Mark alerts as INVESTIGATING and add investigation notes.`,
+          `Do not resolve until root cause analysis is complete.`,
+        ],
+      })
+    }
+
+    if (blockedTransactions > 0) {
+      actionSteps.push({
+        priority: 'CRITICAL',
+        title: `Investigate ${blockedTransactions} Blocked Transaction${blockedTransactions > 1 ? 's' : ''}`,
+        details: [
+          `Navigate to Transactions tab and filter for BLOCKED status.`,
+          `Review each blocked transaction's account and payee information.`,
+          `Check for SDN matches or rule violations (open transaction details).`,
+          `Determine if transaction should be rejected or the rule should be adjusted.`,
+          `Update the related alert status to CLOSED or escalate as needed.`,
+        ],
+      })
+    }
+
+    if (highAlerts > 0 && !blockedTransactions) {
+      actionSteps.push({
+        priority: 'HIGH',
+        title: `Process ${highAlerts} HIGH-Severity Alert${highAlerts > 1 ? 's' : ''}`,
+        details: [
+          `Filter alerts by HIGH severity and status OPEN.`,
+          `Sort by creation date (newest first) and review each alert.`,
+          `For each alert: verify the transaction, assess the risk, and determine next action.`,
+          `Mark as ACKNOWLEDGED, INVESTIGATING, or DISMISSED based on findings.`,
+          `Estimate time to resolution for active investigations.`,
+        ],
+      })
+    }
+
+    if (unresolvedRatio > 75 && !criticalAlerts && !highAlerts) {
+      actionSteps.push({
+        priority: 'HIGH',
+        title: `Clear High-Backlog Alert Queue (${unresolvedRatio}% Unresolved)`,
+        details: [
+          `Open Alerts tab and sort by status (OPEN, ACKNOWLEDGED, INVESTIGATING).`,
+          `Identify resolved alerts that are still marked as INVESTIGATING or ACKNOWLEDGED.`,
+          `For each, verify no further action is needed and close them.`,
+          `Focus on completing investigations for INVESTIGATING alerts first.`,
+          `Target: reduce unresolved rate below 50% within the current work session.`,
+        ],
+      })
+    }
+
+    if (mediumAlerts > 0 && actionSteps.length < 3) {
+      actionSteps.push({
+        priority: 'MEDIUM',
+        title: `Review ${mediumAlerts} MEDIUM-Severity Alert${mediumAlerts > 1 ? 's' : ''}`,
+        details: [
+          `Filter alerts by MEDIUM severity and status OPEN.`,
+          `Batch-process these alerts in the Alerts workflow tab.`,
+          `Apply standard review procedures: check transaction, add notes if needed.`,
+          `Close or escalate based on established thresholds.`,
+          `Monitor for patterns that may indicate emerging risk trends.`,
+        ],
+      })
+    }
+
+    if (actionSteps.length === 0) {
+      actionSteps.push({
+        priority: 'MEDIUM',
+        title: 'Continue Monitoring & Dashboard Maintenance',
+        details: [
+          `System is operating normally with minimal active alerts.`,
+          `Review enabled rules and verify they align with current risk appetite.`,
+          `Check simulator scenarios to proactively test new rule configurations.`,
+          `Archive old CLOSED alerts to maintain dashboard performance.`,
+          `Plan rule tuning or threshold adjustments based on historical data.`,
+        ],
+      })
+    }
+
+    return { narrative, insights, actionSteps }
+  }, [alerts, chartData.byRule, chartData.txOverTime, metrics.activeRules, metrics.openAlerts, metrics.totalTransactions, metrics.totalVolume])
+
+  const generateDashboardSummary = useCallback(() => {
+    setDashboardSummary({
+      ...dashboardSummaryDraft,
+      generatedAt: new Date().toLocaleString(),
+    })
+    setShowDashboardSummary(true)
+  }, [dashboardSummaryDraft])
 
   const saveTransaction = async (event: FormEvent) => {
     event.preventDefault()
@@ -785,6 +933,51 @@ function App() {
                 </table>
               </div>
             </section>
+
+            <section className="card dashboard-summary">
+              <div className="dashboard-summary-header">
+                <div>
+                  <h3>AI Dashboard Summary</h3>
+                  <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
+                </div>
+                <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
+                  <Bot size={15} />
+                  {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                </button>
+              </div>
+
+              {showDashboardSummary && dashboardSummary ? (
+                <div className="dashboard-summary-body">
+                  <p className="muted">Generated: {dashboardSummary.generatedAt}</p>
+                  <p>{dashboardSummary.narrative}</p>
+                  <h4>Key Insights</h4>
+                  <ul className="dashboard-summary-list">
+                    {dashboardSummary.insights.map((insight) => (
+                      <li key={insight}>{insight}</li>
+                    ))}
+                  </ul>
+
+                  <h4 style={{ marginTop: '16px' }}>Recommended Action Steps</h4>
+                  <div className="action-steps">
+                    {dashboardSummary.actionSteps.map((step, index) => (
+                      <div key={index} className={`action-step action-step-${step.priority.toLowerCase()}`}>
+                        <div className="action-step-header">
+                          <span className={`action-priority-badge badge sev-${step.priority === 'CRITICAL' ? 'critical' : step.priority === 'HIGH' ? 'high' : 'medium'}`}>
+                            {step.priority}
+                          </span>
+                          <h5>{step.title}</h5>
+                        </div>
+                        <ol className="action-step-details">
+                          {step.details.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </section>
           </div>
         ) : null}
 
@@ -861,7 +1054,11 @@ function App() {
               </select>
               <input placeholder="Min Amount" value={txMinAmount} onChange={(event) => setTxMinAmount(event.target.value)} />
               <input placeholder="Max Amount" value={txMaxAmount} onChange={(event) => setTxMaxAmount(event.target.value)} />
-              <select value={txSortBy} onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}>
+              <select
+                className="tx-sort-select"
+                value={txSortBy}
+                onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}
+              >
                 <option value="TIME_DESC">Newest</option>
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
