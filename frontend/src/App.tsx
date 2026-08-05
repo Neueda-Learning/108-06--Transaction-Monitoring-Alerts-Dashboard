@@ -1338,21 +1338,50 @@ function App() {
 
             <section className="card">
               <h3>Investigation Queue ({sortedAlerts.length})</h3>
-              <div className="alerts-grid">
-                {sortedAlerts.map((entry) => (
-                  <article key={entry.id} className="alert-card">
-                    <div className="alert-head">
-                      <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
-                      <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
-                    </div>
-                    <h4>{entry.ruleName}</h4>
-                    <p className="muted">{entry.message}</p>
-                    <p className="mono">AL-{entry.id} | ACC-{entry.accountId}</p>
-                    <button type="button" className="primary" onClick={() => openInvestigateDialog(entry.id)}>
-                      Investigate
-                    </button>
-                  </article>
-                ))}
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Alert ID</th>
+                      <th>Severity</th>
+                      <th>Triggered Rule</th>
+                      <th>Related Account</th>
+                      <th>Related Txns</th>
+                      <th>Current Status</th>
+                      <th>Created Time</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedAlerts.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="mono">AL-{entry.id}</td>
+                        <td>
+                          <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
+                        </td>
+                        <td>{entry.ruleName}</td>
+                        <td className="mono">{entry.accountId}</td>
+                        <td className="mono">TX-{entry.transactionId} (1 tx)</td>
+                        <td>
+                          <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
+                        </td>
+                        <td className="mono">{formatDate(entry.createdAt)}</td>
+                        <td>
+                          <button type="button" className="ghost" onClick={() => openInvestigateDialog(entry.id)}>
+                            Open Workspace &gt;
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!sortedAlerts.length ? (
+                      <tr>
+                        <td className="empty-row" colSpan={8}>
+                          No alerts matched the selected filters.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
             </section>
           </div>
