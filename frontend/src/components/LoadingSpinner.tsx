@@ -6,9 +6,9 @@ interface LoadingSpinnerProps {
 
 export function LoadingSpinner({ message = 'Loading...' }: LoadingSpinnerProps) {
   return (
-    <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={6} gap={2}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 6, gap: 2 }}>
       <CircularProgress size={40} sx={{ color: '#7C3AED' }} />
-      <Typography color="text.secondary" fontSize={14}>{message}</Typography>
+      <Typography sx={{ color: 'text.secondary', fontSize: 14 }}>{message}</Typography>
     </Box>
   )
 }

@@ -21,7 +21,7 @@ export function TriggerExplanation({ message }: TriggerExplanationProps) {
       }}
     >
       <WarningAmberRoundedIcon sx={{ color: '#F59E0B', mt: '2px', flexShrink: 0 }} />
-      <Typography fontSize={14} color="#92400E" lineHeight={1.6}>
+      <Typography sx={{ fontSize: 14, color: '#92400E', lineHeight: 1.6 }}>
         {message}
       </Typography>
     </Box>

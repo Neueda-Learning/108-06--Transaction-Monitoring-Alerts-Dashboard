@@ -34,12 +34,14 @@ import {
 import { toast } from 'react-hot-toast'
 import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
 import { apiRequest } from './api/client'
+import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import type {
+  AiDashboardSummaryResponse,
   AiInvestigationResponse,
   AlertResponse,
   AlertStatus,
@@ -104,12 +106,7 @@ const DEFAULT_TX_FILTERS = {
   sortBy: 'TIME_DESC' as const,
 }
 
-type DashboardSummary = {
-  generatedAt: string
-  narrative: string
-  insights: string[]
-  actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
-}
+type DashboardSummary = AiDashboardSummaryResponse
 
 type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
 type AlertSortDirection = 'desc' | 'asc'
@@ -144,6 +141,9 @@ function App() {
   const [openInvestigation, setOpenInvestigation] = useState(false)
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
   const [pendingAlertStatus, setPendingAlertStatus] = useState<AlertStatus | null>(null)
+  const [aiResult, setAiResult] = useState<AiInvestigationResponse | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
   const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
@@ -187,6 +187,8 @@ function App() {
 
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
   const [showDashboardSummary, setShowDashboardSummary] = useState(false)
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false)
+  const [dashboardSummaryError, setDashboardSummaryError] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -394,6 +396,123 @@ function App() {
     [alerts],
   )
 
+  const buildDashboardSummaryText = useCallback((summary: DashboardSummary) => {
+    return [
+      summary.narrative,
+      '',
+      'Key Insights:',
+      ...summary.insights.map((entry) => `- ${entry}`),
+      '',
+      'Recommended Action Steps:',
+      ...summary.actionSteps.map((step) => `[${step.priority}] ${step.title}`),
+    ].join('\n')
+  }, [])
+
+  const buildLocalDashboardSummary = useCallback((): DashboardSummary => {
+    const openAlerts = alerts.filter((entry) => entry.status !== 'CLOSED' && entry.status !== 'DISMISSED')
+    const criticalOpen = openAlerts.filter((entry) => entry.severity === 'CRITICAL')
+    const highOpen = openAlerts.filter((entry) => entry.severity === 'HIGH')
+    const mediumOpen = openAlerts.filter((entry) => entry.severity === 'MEDIUM')
+    const flaggedOrBlocked = transactions.filter((entry) => entry.status === 'FLAGGED' || entry.status === 'BLOCKED')
+    const flaggedRate = transactions.length ? Math.round((flaggedOrBlocked.length / transactions.length) * 100) : 0
+    const activeRules = rules.filter((rule) => rule.active).length
+
+    const narrative = `Across ${transactions.length} monitored transactions, ${flaggedOrBlocked.length} (${flaggedRate}%) were flagged or blocked. There are currently ${openAlerts.length} open alerts (${criticalOpen.length} critical, ${highOpen.length} high, ${mediumOpen.length} medium) tracked against ${activeRules} active monitoring rules.`
+
+    const insights = [
+      `${transactions.length} total transactions, ${flaggedOrBlocked.length} flagged or blocked (${flaggedRate}%).`,
+      `${openAlerts.length} open alerts awaiting resolution.`,
+      `${criticalOpen.length} critical-severity alerts require immediate attention.`,
+      `${activeRules} of ${rules.length} monitoring rules are currently active.`,
+    ]
+
+    const actionSteps: DashboardSummary['actionSteps'] = []
+    if (criticalOpen.length) {
+      actionSteps.push({
+        priority: 'CRITICAL',
+        title: `Resolve ${criticalOpen.length} critical alert${criticalOpen.length === 1 ? '' : 's'}`,
+        details: criticalOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
+    }
+    if (highOpen.length) {
+      actionSteps.push({
+        priority: 'HIGH',
+        title: `Review ${highOpen.length} high-severity alert${highOpen.length === 1 ? '' : 's'}`,
+        details: highOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
+    }
+    if (mediumOpen.length) {
+      actionSteps.push({
+        priority: 'MEDIUM',
+        title: `Triage ${mediumOpen.length} medium-severity alert${mediumOpen.length === 1 ? '' : 's'}`,
+        details: mediumOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
+    }
+
+    return {
+      generatedAt: new Date().toLocaleString(),
+      narrative,
+      insights,
+      actionSteps,
+      model: 'local-heuristic',
+    }
+  }, [alerts, transactions, rules])
+
+  const generateDashboardSummary = useCallback(async () => {
+    setDashboardSummaryLoading(true)
+    setDashboardSummaryError(null)
+    try {
+      const result = await generateAiDashboardSummary()
+      setDashboardSummary(result)
+    } catch (summaryRequestError) {
+      const message = summaryRequestError instanceof Error ? summaryRequestError.message : 'AI summary generation failed'
+      setDashboardSummaryError(`${message} - showing a locally computed summary instead.`)
+      setDashboardSummary(buildLocalDashboardSummary())
+    } finally {
+      setDashboardSummaryLoading(false)
+      setShowDashboardSummary(true)
+    }
+  }, [buildLocalDashboardSummary])
+
+  const copyDashboardSummary = useCallback(async () => {
+    if (!dashboardSummary) {
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(buildDashboardSummaryText(dashboardSummary))
+      showSuccessToast('Summary copied to clipboard')
+    } catch {
+      toast.error('Failed to copy summary')
+    }
+  }, [buildDashboardSummaryText, dashboardSummary, showSuccessToast])
+
+  const downloadDashboardSummary = useCallback(() => {
+    if (!dashboardSummary) {
+      return
+    }
+    const blob = new Blob([buildDashboardSummaryText(dashboardSummary)], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dashboard-summary-${Date.now()}.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [buildDashboardSummaryText, dashboardSummary])
+
+  const applyAlertFilters = useCallback(() => {
+    setAlertFilterStatus(alertFilterStatusDraft)
+    setAlertFilterSeverity(alertFilterSeverityDraft)
+    setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
+    setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
+    setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
+  }, [
+    alertFilterStatusDraft,
+    alertFilterSeverityDraft,
+    alertSearchAlertIdDraft,
+    alertSearchTransactionIdDraft,
+    alertSearchAccountIdDraft,
+  ])
+
   const derivedTransactions = useMemo(() => {
     const sortedTransactions = transactions
       .map((entry) => {
@@ -532,6 +651,8 @@ function App() {
   const openInvestigateDialog = useCallback((alertId: number) => {
     setSelectedAlertId(alertId)
     setPendingAlertStatus(null)
+    setAiResult(null)
+    setAiError(null)
     setOpenInvestigation(true)
   }, [])
 
@@ -539,6 +660,8 @@ function App() {
     setOpenInvestigation(false)
     setSelectedAlertId(null)
     setPendingAlertStatus(null)
+    setAiResult(null)
+    setAiError(null)
   }, [])
 
   const handleWorkflowStatusChange = useCallback((status: AlertStatus) => {
@@ -909,9 +1032,14 @@ function App() {
                   <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
                 </div>
                 <div className="dashboard-summary-actions">
-                  <button className="primary dashboard-summary-btn" type="button" onClick={generateDashboardSummary}>
+                  <button
+                    className="primary dashboard-summary-btn"
+                    type="button"
+                    onClick={() => void generateDashboardSummary()}
+                    disabled={dashboardSummaryLoading}
+                  >
                     <Bot size={15} />
-                    {dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                    {dashboardSummaryLoading ? 'Generating...' : dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
                   </button>
                   <button className="ghost dashboard-summary-btn" type="button" onClick={() => void copyDashboardSummary()} disabled={!dashboardSummary}>
                     <Copy size={15} />
@@ -924,9 +1052,14 @@ function App() {
                 </div>
               </div>
 
+              {dashboardSummaryError ? <p className="error-text">{dashboardSummaryError}</p> : null}
+
               {showDashboardSummary && dashboardSummary ? (
                 <div className="dashboard-summary-body">
-                  <p className="muted">Generated: {dashboardSummary.generatedAt}</p>
+                  <p className="muted">
+                    Generated: {dashboardSummary.generatedAt}
+                    {dashboardSummary.model ? ` \u00b7 ${dashboardSummary.model}` : ''}
+                  </p>
                   <p>{dashboardSummary.narrative}</p>
                   <h4>Key Insights</h4>
                   <ul className="dashboard-summary-list">
@@ -1177,15 +1310,36 @@ function App() {
                   onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
                 />
               </label>
+              <label>
+                Sort By
+                <select value={alertSortColumn} onChange={(event) => setAlertSortColumn(event.target.value as AlertSortColumn)}>
+                  <option value="createdAt">Created</option>
+                  <option value="id">Alert ID</option>
+                  <option value="transactionId">Transaction ID</option>
+                  <option value="accountId">Account</option>
+                  <option value="severity">Severity</option>
+                  <option value="status">Status</option>
+                </select>
+              </label>
+              <label>
+                Direction
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setAlertSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                >
+                  {alertSortDirection === 'desc' ? 'Descending' : 'Ascending'}
+                </button>
+              </label>
               <div className="span-2 alerts-filter-actions">
                 <button type="button" className="primary" onClick={applyAlertFilters}>Filter</button>
               </div>
             </section>
 
             <section className="card">
-              <h3>Investigation Queue ({filteredAlerts.length})</h3>
+              <h3>Investigation Queue ({sortedAlerts.length})</h3>
               <div className="alerts-grid">
-                {filteredAlerts.map((entry) => (
+                {sortedAlerts.map((entry) => (
                   <article key={entry.id} className="alert-card">
                     <div className="alert-head">
                       <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
@@ -1475,6 +1629,10 @@ function App() {
           onWorkflowStatusChange={handleWorkflowStatusChange}
           onPostNote={postInvestigationNote}
           onSaveInvestigation={saveInvestigation}
+          aiResult={aiResult}
+          aiLoading={aiLoading}
+          aiError={aiError}
+          onInvestigateWithAi={onInvestigateWithAi}
         />
       </section>
     </div>

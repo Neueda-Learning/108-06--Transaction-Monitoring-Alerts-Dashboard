@@ -45,7 +45,7 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid #E2E8F0', mb: 3 }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={2.5}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2.5 }}>
           Investigation Notes
         </Typography>
 
@@ -66,7 +66,7 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
               },
             }}
           />
-          <Box display="flex" justifyContent="flex-end">
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button
               variant="contained"
               endIcon={submitting ? <CircularProgress size={16} color="inherit" /> : <SendIcon fontSize="small" />}
@@ -86,7 +86,7 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
           </Box>
         </Box>
 
-        <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase" letterSpacing={0.5}>
+        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
           Previous Notes
         </Typography>
 
@@ -95,7 +95,7 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
         ) : notes.length === 0 ? (
           <EmptyState message="No investigation notes yet." />
         ) : (
-          <Box mt={1.5} display="flex" flexDirection="column" gap={2}>
+          <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
             {[...notes].reverse().map((note) => (
               <Box
                 key={note.id}
@@ -120,12 +120,12 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
                 >
                   {note.operatorName.charAt(0)}
                 </Avatar>
-                <Box flex={1}>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
-                    <Typography fontSize={13} fontWeight={700}>{note.operatorName}</Typography>
-                    <Typography fontSize={11} color="text.secondary">{formatDate(note.createdAt)}</Typography>
+                <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{note.operatorName}</Typography>
+                    <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{formatDate(note.createdAt)}</Typography>
                   </Box>
-                  <Typography fontSize={13} color="text.secondary" lineHeight={1.6}>
+                  <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
                     "{note.content}"
                   </Typography>
                 </Box>

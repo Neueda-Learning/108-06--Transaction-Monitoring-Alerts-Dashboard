@@ -99,3 +99,12 @@ export interface SimulationResult {
   alerts: AlertResponse[]
 }
 
+export interface AiDashboardSummaryResponse {
+  generatedAt: string
+  narrative: string
+  insights: string[]
+  actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }>
+  model: string
+}
+
+

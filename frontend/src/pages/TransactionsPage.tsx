@@ -33,8 +33,6 @@ const createPlaceholders = {
   currency: 'USD',
 }
 
-const PAGE_SIZE = 10
-
 function prioritizeCreatedTransaction(
   loadedTransactions: TransactionResponse[],
   createdTransaction: TransactionResponse,
@@ -106,15 +104,19 @@ export function TransactionsPage() {
     resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [createdTransactionId, transactions])
 
-  const filteredTransactions = filterItemsByText(transactions, search, (transaction) => [
-    transaction.accountId,
-    transaction.payeeId,
-    transaction.payeeName,
-    transaction.description,
-    transaction.currency,
-    transaction.status,
-    transaction.id,
-  ])
+  const filteredTransactions = useMemo(
+    () =>
+      filterItemsByText(transactions, search, (transaction) => [
+        transaction.accountId,
+        transaction.payeeId,
+        transaction.payeeName,
+        transaction.description,
+        transaction.currency,
+        transaction.status,
+        transaction.id,
+      ]),
+    [transactions, search],
+  )
 
   const pageCount = getPageCount(filteredTransactions.length, pageSize)
   const visibleTransactions = paginateItems(filteredTransactions, page, pageSize)
@@ -135,19 +137,6 @@ export function TransactionsPage() {
     setFilters(queryFilters)
     void loadTransactions(queryFilters)
   }
-
-  const filteredTransactions = useMemo(
-    () =>
-      filterItemsByText(transactions, search, (transaction) => [
-        transaction.accountId,
-        transaction.payeeId,
-        transaction.description,
-      ]),
-    [transactions, search],
-  )
-
-  const pageCount = getPageCount(filteredTransactions.length, PAGE_SIZE)
-  const visibleTransactions = paginateItems(filteredTransactions, page, PAGE_SIZE)
 
   const onCreateSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -389,7 +378,7 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
-        {filteredTransactions.length > PAGE_SIZE ? (
+        {filteredTransactions.length > pageSize ? (
           <div className="button-row">
             <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
               Previous

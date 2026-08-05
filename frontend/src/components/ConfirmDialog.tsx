@@ -30,7 +30,7 @@ export function ConfirmDialog({
     <Dialog open={open} onClose={onCancel} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>{title}</DialogTitle>
       <DialogContent>
-        <Typography color="text.secondary" fontSize={14}>{message}</Typography>
+        <Typography sx={{ color: 'text.secondary', fontSize: 14 }}>{message}</Typography>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
         <Button variant="outlined" color="inherit" onClick={onCancel} sx={{ textTransform: 'none' }}>

@@ -75,7 +75,7 @@ export function AuditTimeline({ events, loading }: AuditTimelineProps) {
   return (
     <Card elevation={0} sx={{ borderRadius: 3, border: '1px solid #E2E8F0', mb: 3 }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography variant="subtitle1" fontWeight={700} mb={2.5}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 2.5 }}>
           Audit Trail & History
         </Typography>
 
@@ -84,15 +84,15 @@ export function AuditTimeline({ events, loading }: AuditTimelineProps) {
         ) : events.length === 0 ? (
           <EmptyState message="No audit history yet." />
         ) : (
-          <Box display="flex" flexDirection="column" gap={0}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {sorted.map((event, index) => {
               const meta = EVENT_META[event.eventType]
               const isLast = index === sorted.length - 1
 
               return (
-                <Box key={event.id} display="flex" gap={2} alignItems="flex-start">
+                <Box key={event.id} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                   {/* Timeline line + icon */}
-                  <Box display="flex" flexDirection="column" alignItems="center" sx={{ minWidth: 36 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 36 }}>
                     <Box
                       sx={{
                         width: 36,
@@ -114,8 +114,8 @@ export function AuditTimeline({ events, loading }: AuditTimelineProps) {
                   </Box>
 
                   {/* Content */}
-                  <Box pb={isLast ? 0 : 2.5} flex={1}>
-                    <Box display="flex" alignItems="center" gap={1} mb={0.5} flexWrap="wrap">
+                  <Box sx={{ pb: isLast ? 0 : 2.5, flex: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
                       <Chip
                         label={meta.label}
                         size="small"
@@ -127,15 +127,15 @@ export function AuditTimeline({ events, loading }: AuditTimelineProps) {
                         }}
                       />
                       {event.operatorName && (
-                        <Typography fontSize={12} color="text.secondary">
+                        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
                           by <strong>{event.operatorName}</strong>
                         </Typography>
                       )}
                     </Box>
-                    <Typography fontSize={13} color="text.secondary" mb={0.5}>
+                    <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 0.5 }}>
                       {event.description}
                     </Typography>
-                    <Typography fontSize={11} color="#94A3B8">
+                    <Typography sx={{ fontSize: 11, color: '#94A3B8' }}>
                       {formatDate(event.occurredAt)}
                     </Typography>
                   </Box>
