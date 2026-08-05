@@ -37,6 +37,7 @@ import { apiRequest } from './api/client'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
+import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import type {
   AiInvestigationResponse,
@@ -49,6 +50,7 @@ import type {
   SimulationResult,
   TransactionResponse,
 } from './api/types'
+import type { InvestigationNote } from './models/alertModels'
 import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
@@ -139,12 +141,9 @@ function App() {
   const [alertSortColumn, setAlertSortColumn] = useState<AlertSortColumn>('createdAt')
   const [alertSortDirection, setAlertSortDirection] = useState<AlertSortDirection>('desc')
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
-  const [alertNote, setAlertNote] = useState('')
-  const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
-  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
-  const [aiResult, setAiResult] = useState<AiInvestigationResponse | null>(null)
-  const [aiLoading, setAiLoading] = useState(false)
-  const [aiError, setAiError] = useState<string | null>(null)
+  const [openInvestigation, setOpenInvestigation] = useState(false)
+  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
+  const [pendingAlertStatus, setPendingAlertStatus] = useState<AlertStatus | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
   const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
@@ -317,6 +316,19 @@ function App() {
     [alerts, selectedAlertId],
   )
 
+  const selectedAlertForDialog = useMemo(() => {
+    if (!selectedAlert) {
+      return null
+    }
+    if (!pendingAlertStatus || pendingAlertStatus === selectedAlert.status) {
+      return selectedAlert
+    }
+    return {
+      ...selectedAlert,
+      status: pendingAlertStatus,
+    }
+  }, [pendingAlertStatus, selectedAlert])
+
   const chartData = useMemo(() => {
     const txBuckets = Array.from({ length: 8 }, (_, index) => ({ label: `${index * 3}h`, count: 0 }))
     transactions.forEach((entry) => {
@@ -430,7 +442,16 @@ function App() {
     const createdTransaction = sortedTransactions[createdTransactionIndex]
     const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
     return [createdTransaction, ...withoutCreatedTransaction]
-  }, [alertsByTransaction, createdTxId, transactions, appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
+  }, [
+    alertsByTransaction,
+    appliedTxMaxAmount,
+    appliedTxMinAmount,
+    appliedTxSearch,
+    appliedTxSortBy,
+    appliedTxStatusFilter,
+    createdTxId,
+    transactions,
+  ])
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -451,21 +472,20 @@ function App() {
     setCreatedTxId(null)
   }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
 
-  useEffect(() => {
-    setAiResult(null)
-    setAiError(null)
-    setAiLoading(false)
-  }, [selectedAlertId])
+  const selectedTx = useMemo(
+    () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
+    [derivedTransactions, selectedTxId],
+  )
 
-  const applyTransactionFilters = () => {
+  const applyTransactionFilters = useCallback(() => {
     setAppliedTxSearch(txSearch)
     setAppliedTxStatusFilter(txStatusFilter)
     setAppliedTxMinAmount(txMinAmount)
     setAppliedTxMaxAmount(txMaxAmount)
     setAppliedTxSortBy(txSortBy)
-  }
+  }, [txMaxAmount, txMinAmount, txSearch, txSortBy, txStatusFilter])
 
-  const resetTransactionFilters = () => {
+  const resetTransactionFilters = useCallback(() => {
     setTxSearch(DEFAULT_TX_FILTERS.search)
     setTxStatusFilter(DEFAULT_TX_FILTERS.status)
     setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
@@ -476,225 +496,8 @@ function App() {
     setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
     setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
     setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
-  }
-
-  const applyAlertFilters = () => {
-    setAlertFilterStatus(alertFilterStatusDraft)
-    setAlertFilterSeverity(alertFilterSeverityDraft)
-    setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
-    setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
-    setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
-  }
-
-  const toggleAlertSort = (column: AlertSortColumn) => {
-    if (alertSortColumn === column) {
-      setAlertSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'))
-      return
-    }
-
-    setAlertSortColumn(column)
-    setAlertSortDirection('desc')
-  }
-
-  const selectedTx = useMemo(
-    () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
-    [derivedTransactions, selectedTxId],
-  )
-
-  const dashboardSummaryDraft = useMemo(() => {
-    const unresolvedAlerts = alerts.filter((entry) => !['CLOSED', 'DISMISSED'].includes(entry.status)).length
-    const unresolvedRatio = alerts.length ? Math.round((unresolvedAlerts / alerts.length) * 100) : 0
-
-    const severeAlerts = alerts.filter((entry) => ['HIGH', 'CRITICAL'].includes(entry.severity)).length
-    const severeRatio = alerts.length ? Math.round((severeAlerts / alerts.length) * 100) : 0
-
-    const criticalAlerts = alerts.filter((entry) => entry.severity === 'CRITICAL').length
-    const highAlerts = alerts.filter((entry) => entry.severity === 'HIGH').length
-    const mediumAlerts = alerts.filter((entry) => entry.severity === 'MEDIUM').length
-
-    const blockedTransactions = new Set(
-      alerts
-        .filter((entry) => entry.severity === 'HIGH' && !['CLOSED', 'DISMISSED'].includes(entry.status))
-        .map((entry) => entry.transactionId),
-    ).size
-
-    const busiestWindow = chartData.txOverTime.reduce(
-      (top, bucket) => (bucket.count > top.count ? bucket : top),
-      chartData.txOverTime[0] ?? { label: '0h', count: 0 },
-    )
-
-    const topRule = chartData.byRule.reduce(
-      (top, entry) => (entry.count > top.count ? entry : top),
-      chartData.byRule[0] ?? { label: 'N/A', count: 0 },
-    )
-
-    const narrative =
-      metrics.totalTransactions === 0
-        ? 'No transactions have been recorded yet. Add transactions or run a simulator scenario to generate monitoring insights.'
-        : `The dashboard is monitoring ${metrics.totalTransactions} transactions (${formatCurrency(metrics.totalVolume, 'GBP')} total volume) with ${metrics.openAlerts} active alerts across ${metrics.activeRules} active rules.`
-
-    const insights = [
-      `Risk concentration: ${severeAlerts} of ${alerts.length || 0} alerts are HIGH or CRITICAL (${severeRatio}%).`,
-      `Operational queue: ${unresolvedAlerts} alerts are unresolved (${unresolvedRatio}% of all alerts).`,
-      `Transaction pressure: peak volume appears around ${busiestWindow.label} with ${busiestWindow.count} transactions in that bucket.`,
-      `Rule impact: ${topRule.label} is currently the most triggered rule type (${topRule.count} alerts).`,
-      `Containment signal: ${blockedTransactions} transactions are currently BLOCKED by high-severity active alerts.`,
-    ]
-
-    // Generate detailed action steps based on alert state
-    const actionSteps: Array<{ priority: 'CRITICAL' | 'HIGH' | 'MEDIUM'; title: string; details: string[] }> = []
-
-    if (criticalAlerts > 0) {
-      actionSteps.push({
-        priority: 'CRITICAL',
-        title: `Escalate ${criticalAlerts} CRITICAL Alert${criticalAlerts > 1 ? 's' : ''}`,
-        details: [
-          `Immediately open the Alerts tab and filter by CRITICAL severity.`,
-          `Document the CRITICAL alert IDs and linked transaction details.`,
-          `Escalate findings to compliance team and senior management.`,
-          `Mark alerts as INVESTIGATING and add investigation notes.`,
-          `Do not resolve until root cause analysis is complete.`,
-        ],
-      })
-    }
-
-    if (blockedTransactions > 0) {
-      actionSteps.push({
-        priority: 'CRITICAL',
-        title: `Investigate ${blockedTransactions} Blocked Transaction${blockedTransactions > 1 ? 's' : ''}`,
-        details: [
-          `Navigate to Transactions tab and filter for BLOCKED status.`,
-          `Review each blocked transaction's account and payee information.`,
-          `Check for SDN matches or rule violations (open transaction details).`,
-          `Determine if transaction should be rejected or the rule should be adjusted.`,
-          `Update the related alert status to CLOSED or escalate as needed.`,
-        ],
-      })
-    }
-
-    if (highAlerts > 0 && !blockedTransactions) {
-      actionSteps.push({
-        priority: 'HIGH',
-        title: `Process ${highAlerts} HIGH-Severity Alert${highAlerts > 1 ? 's' : ''}`,
-        details: [
-          `Filter alerts by HIGH severity and status OPEN.`,
-          `Sort by creation date (newest first) and review each alert.`,
-          `For each alert: verify the transaction, assess the risk, and determine next action.`,
-          `Mark as ACKNOWLEDGED, INVESTIGATING, or DISMISSED based on findings.`,
-          `Estimate time to resolution for active investigations.`,
-        ],
-      })
-    }
-
-    if (unresolvedRatio > 75 && !criticalAlerts && !highAlerts) {
-      actionSteps.push({
-        priority: 'HIGH',
-        title: `Clear High-Backlog Alert Queue (${unresolvedRatio}% Unresolved)`,
-        details: [
-          `Open Alerts tab and sort by status (OPEN, ACKNOWLEDGED, INVESTIGATING).`,
-          `Identify resolved alerts that are still marked as INVESTIGATING or ACKNOWLEDGED.`,
-          `For each, verify no further action is needed and close them.`,
-          `Focus on completing investigations for INVESTIGATING alerts first.`,
-          `Target: reduce unresolved rate below 50% within the current work session.`,
-        ],
-      })
-    }
-
-    if (mediumAlerts > 0 && actionSteps.length < 3) {
-      actionSteps.push({
-        priority: 'MEDIUM',
-        title: `Review ${mediumAlerts} MEDIUM-Severity Alert${mediumAlerts > 1 ? 's' : ''}`,
-        details: [
-          `Filter alerts by MEDIUM severity and status OPEN.`,
-          `Batch-process these alerts in the Alerts workflow tab.`,
-          `Apply standard review procedures: check transaction, add notes if needed.`,
-          `Close or escalate based on established thresholds.`,
-          `Monitor for patterns that may indicate emerging risk trends.`,
-        ],
-      })
-    }
-
-    if (actionSteps.length === 0) {
-      actionSteps.push({
-        priority: 'MEDIUM',
-        title: 'Continue Monitoring & Dashboard Maintenance',
-        details: [
-          `System is operating normally with minimal active alerts.`,
-          `Review enabled rules and verify they align with current risk appetite.`,
-          `Check simulator scenarios to proactively test new rule configurations.`,
-          `Archive old CLOSED alerts to maintain dashboard performance.`,
-          `Plan rule tuning or threshold adjustments based on historical data.`,
-        ],
-      })
-    }
-
-    return { narrative, insights, actionSteps }
-  }, [alerts, chartData.byRule, chartData.txOverTime, metrics.activeRules, metrics.openAlerts, metrics.totalTransactions, metrics.totalVolume])
-
-  const generateDashboardSummary = useCallback(() => {
-    setDashboardSummary({
-      ...dashboardSummaryDraft,
-      generatedAt: new Date().toLocaleString(),
-    })
-    setShowDashboardSummary(true)
-  }, [dashboardSummaryDraft])
-
-  const buildDashboardSummaryExport = useCallback((summary: DashboardSummary) => {
-    const lines: string[] = []
-    lines.push('Transaction Monitoring Dashboard Summary')
-    lines.push(`Generated: ${summary.generatedAt}`)
-    lines.push('')
-    lines.push('Overview')
-    lines.push(summary.narrative)
-    lines.push('')
-    lines.push('Key Insights')
-    summary.insights.forEach((insight, index) => {
-      lines.push(`${index + 1}. ${insight}`)
-    })
-    lines.push('')
-    lines.push('Recommended Action Steps')
-    summary.actionSteps.forEach((step) => {
-      lines.push(`- [${step.priority}] ${step.title}`)
-      step.details.forEach((detail, index) => {
-        lines.push(`  ${index + 1}. ${detail}`)
-      })
-      lines.push('')
-    })
-    return lines.join('\n')
+    setCreatedTxId(null)
   }, [])
-
-  const copyDashboardSummary = useCallback(async () => {
-    if (!dashboardSummary) {
-      toast.error('Generate summary first')
-      return
-    }
-
-    try {
-      await navigator.clipboard.writeText(buildDashboardSummaryExport(dashboardSummary))
-      showSuccessToast('Summary copied to clipboard')
-    } catch {
-      toast.error('Unable to copy summary from this browser context')
-    }
-  }, [buildDashboardSummaryExport, dashboardSummary, showSuccessToast])
-
-  const downloadDashboardSummary = useCallback(() => {
-    if (!dashboardSummary) {
-      toast.error('Generate summary first')
-      return
-    }
-
-    const fileContents = buildDashboardSummaryExport(dashboardSummary)
-    const fileBlob = new Blob([fileContents], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(fileBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `dashboard-summary-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
-    showSuccessToast('Summary downloaded')
-  }, [buildDashboardSummaryExport, dashboardSummary, showSuccessToast])
 
   const saveTransaction = async (event: FormEvent) => {
     event.preventDefault()
@@ -726,26 +529,62 @@ function App() {
     }
   }
 
-  const moveAlertStatus = async (event: FormEvent) => {
-    event.preventDefault()
+  const openInvestigateDialog = useCallback((alertId: number) => {
+    setSelectedAlertId(alertId)
+    setPendingAlertStatus(null)
+    setOpenInvestigation(true)
+  }, [])
+
+  const closeInvestigateDialog = useCallback(() => {
+    setOpenInvestigation(false)
+    setSelectedAlertId(null)
+    setPendingAlertStatus(null)
+  }, [])
+
+  const handleWorkflowStatusChange = useCallback((status: AlertStatus) => {
+    setPendingAlertStatus(status)
+  }, [])
+
+  const postInvestigationNote = useCallback(async (content: string) => {
+    if (!selectedAlert) {
+      return
+    }
+    const nextNote: InvestigationNote = {
+      id: Date.now(),
+      alertId: selectedAlert.id,
+      operatorName: 'Current User',
+      content,
+      createdAt: new Date().toISOString(),
+    }
+    setNotesByAlertId((prev) => ({
+      ...prev,
+      [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), nextNote],
+    }))
+  }, [selectedAlert])
+
+  const saveInvestigation = useCallback(async () => {
     if (!selectedAlert) {
       return
     }
     setError(null)
     try {
-      await updateAlertStatus(selectedAlert.id, { status: nextStatus, note: alertNote })
-      if (alertNote.trim()) {
-        setNotesByAlertId((prev) => ({
-          ...prev,
-          [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), alertNote.trim()],
-        }))
+      const statusToPersist = pendingAlertStatus ?? selectedAlert.status
+
+      if (statusToPersist !== selectedAlert.status) {
+        await updateAlertStatus(selectedAlert.id, { status: statusToPersist })
+        const statusLabel = statusToPersist.charAt(0) + statusToPersist.slice(1).toLowerCase()
+        showSuccessToast(`Alert status updated to ${statusLabel}`)
+      } else {
+        showSuccessToast('Investigation saved')
       }
-      setAlertNote('')
+
       await loadAll()
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Failed to update alert')
+      setPendingAlertStatus(null)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save investigation')
+      throw saveError
     }
-  }
+  }, [loadAll, pendingAlertStatus, selectedAlert, showSuccessToast])
 
   const onInvestigateWithAi = async () => {
     if (!selectedAlert) {
@@ -1042,8 +881,8 @@ function App() {
                             type="button"
                             className="ghost"
                             onClick={() => {
-                              setSelectedAlertId(entry.id)
                               setActiveTab('alerts')
+                              openInvestigateDialog(entry.id)
                             }}
                           >
                             Investigate
@@ -1344,139 +1183,24 @@ function App() {
             </section>
 
             <section className="card">
-              <h3>Investigation Queue ({sortedAlerts.length})</h3>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('id')}>
-                          Alert ID {alertSortColumn === 'id' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('transactionId')}>
-                          Transaction ID {alertSortColumn === 'transactionId' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('accountId')}>
-                          Account ID {alertSortColumn === 'accountId' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('severity')}>
-                          Severity {alertSortColumn === 'severity' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('status')}>
-                          Status {alertSortColumn === 'status' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>Rule</th>
-                      <th>
-                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('createdAt')}>
-                          Created {alertSortColumn === 'createdAt' ? (alertSortDirection === 'desc' ? '↓' : '↑') : ''}
-                        </button>
-                      </th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedAlerts.map((entry) => (
-                      <tr key={entry.id}>
-                        <td className="mono">AL-{entry.id}</td>
-                        <td className="mono">TX-{entry.transactionId}</td>
-                        <td className="mono">{entry.accountId}</td>
-                        <td><span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span></td>
-                        <td><span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span></td>
-                        <td>{entry.ruleName}</td>
-                        <td className="mono">{formatDate(entry.createdAt)}</td>
-                        <td>
-                          <button type="button" className="primary" onClick={() => setSelectedAlertId(entry.id)}>
-                            Investigate
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {!sortedAlerts.length ? (
-                      <tr>
-                        <td colSpan={8} className="muted">No alerts match the selected filters.</td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+              <h3>Investigation Queue ({filteredAlerts.length})</h3>
+              <div className="alerts-grid">
+                {filteredAlerts.map((entry) => (
+                  <article key={entry.id} className="alert-card">
+                    <div className="alert-head">
+                      <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
+                      <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
+                    </div>
+                    <h4>{entry.ruleName}</h4>
+                    <p className="muted">{entry.message}</p>
+                    <p className="mono">AL-{entry.id} | ACC-{entry.accountId}</p>
+                    <button type="button" className="primary" onClick={() => openInvestigateDialog(entry.id)}>
+                      Investigate
+                    </button>
+                  </article>
+                ))}
               </div>
             </section>
-
-            {selectedAlert ? (
-              <Modal isOpen={selectedAlert !== null} onClose={() => setSelectedAlertId(null)} titleId="alert-investigation-modal-title">
-                <form className="form-grid" onSubmit={moveAlertStatus}>
-                  <h3 id="alert-investigation-modal-title">Alert Investigation - AL-{selectedAlert.id}</h3>
-                  <p className="muted span-2">{selectedAlert.message}</p>
-                  <label>
-                    Next Status
-                    <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AlertStatus)}>
-                      {STATUSES.filter((entry) => entry !== 'OPEN').map((entry) => (
-                        <option key={entry} value={entry}>{entry}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="span-2">
-                    Analyst Notes
-                    <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
-                  </label>
-                  <button className="primary" type="submit">Update Alert Status</button>
-
-                  <div className="span-2 timeline-wrap">
-                    <div className="button-row">
-                      <button type="button" className="ghost" onClick={onInvestigateWithAi} disabled={aiLoading}>
-                        {aiLoading ? 'Investigating...' : 'Investigate with AI'}
-                      </button>
-                    </div>
-                    {aiError ? <p className="error-text">{aiError}</p> : null}
-                    {aiResult ? (
-                      <div className="ai-result">
-                        <h4>AI Investigation Result</h4>
-                        <p><strong>Risk Level:</strong> {aiResult.riskLevel}</p>
-                        <p><strong>Summary:</strong> {aiResult.summary}</p>
-                        <p><strong>Recommendation:</strong> {aiResult.recommendation}</p>
-                        {aiResult.keyFindings.length ? (
-                          <ul>
-                            {aiResult.keyFindings.map((finding, index) => (
-                              <li key={`ai-finding-${index}`}>{finding}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        <p className="muted mono">Model: {aiResult.model}</p>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="span-2 timeline-wrap">
-                    <h4>Audit Trail</h4>
-                    <ul>
-                      <li>Created: {formatDate(selectedAlert.createdAt)}</li>
-                      <li>Acknowledged: {formatDate(selectedAlert.acknowledgedAt)}</li>
-                      <li>Investigating: {formatDate(selectedAlert.investigatingAt)}</li>
-                      <li>Closed: {formatDate(selectedAlert.closedAt)}</li>
-                      <li>Dismissed: {formatDate(selectedAlert.dismissedAt)}</li>
-                    </ul>
-                  </div>
-
-                  <div className="span-2">
-                    <h4>Notes History</h4>
-                    <ul>
-                      {(notesByAlertId[selectedAlert.id] ?? []).map((note, index) => (
-                        <li key={`${selectedAlert.id}-note-${index}`}>{note}</li>
-                      ))}
-                      {!notesByAlertId[selectedAlert.id]?.length ? <li className="muted">No notes added yet.</li> : null}
-                    </ul>
-                  </div>
-                </form>
-              </Modal>
-            ) : null}
           </div>
         ) : null}
 
@@ -1742,6 +1466,16 @@ function App() {
         ) : null}
 
         {loading ? <p className="muted">Loading latest data...</p> : null}
+
+        <InvestigationDialog
+          open={openInvestigation && selectedAlertForDialog !== null}
+          alert={selectedAlertForDialog}
+          notes={selectedAlert ? (notesByAlertId[selectedAlert.id] ?? []) : []}
+          onClose={closeInvestigateDialog}
+          onWorkflowStatusChange={handleWorkflowStatusChange}
+          onPostNote={postInvestigationNote}
+          onSaveInvestigation={saveInvestigation}
+        />
       </section>
     </div>
   )
