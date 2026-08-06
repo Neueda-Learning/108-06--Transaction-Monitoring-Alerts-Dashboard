@@ -36,6 +36,7 @@ public class MonitoringRuleService {
 
     public MonitoringRule create(MonitoringRuleRequest request) {
         validateRequest(request);
+        rejectDuplicate(request, null);
         MonitoringRule rule = new MonitoringRule();
         updateEntity(rule, request);
         return monitoringRuleRepository.save(rule);
@@ -43,6 +44,7 @@ public class MonitoringRuleService {
 
     public MonitoringRule update(Long id, MonitoringRuleRequest request) {
         validateRequest(request);
+        rejectDuplicate(request, id);
         MonitoringRule rule = getById(id);
         updateEntity(rule, request);
         return monitoringRuleRepository.save(rule);
@@ -87,6 +89,32 @@ public class MonitoringRuleService {
         if (type == RuleType.DAILY_LIMIT && request.dailyLimit() == null) {
             throw new BadRequestException("dailyLimit is required for DAILY_LIMIT rules");
         }
+    }
+
+    private void rejectDuplicate(MonitoringRuleRequest request, Long excludeId) {
+        boolean duplicateExists = monitoringRuleRepository.findAll().stream()
+            .filter(existing -> excludeId == null || !existing.getId().equals(excludeId))
+            .anyMatch(existing -> isSameConfiguration(existing, request));
+        if (duplicateExists) {
+            throw new BadRequestException("A rule with the same configuration already exists");
+        }
+    }
+
+    private boolean isSameConfiguration(MonitoringRule existing, MonitoringRuleRequest request) {
+        return existing.getType() == request.type()
+            && existing.getSeverity() == request.severity()
+            && existing.isActive() == request.active()
+            && isSameAmount(existing.getAmountThreshold(), request.amountThreshold())
+            && java.util.Objects.equals(existing.getVelocityCount(), request.velocityCount())
+            && java.util.Objects.equals(existing.getVelocityWindowMinutes(), request.velocityWindowMinutes())
+            && isSameAmount(existing.getDailyLimit(), request.dailyLimit());
+    }
+
+    private boolean isSameAmount(java.math.BigDecimal left, java.math.BigDecimal right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return left.compareTo(right) == 0;
     }
 
     private Specification<MonitoringRule> buildSearchSpecification(String search) {

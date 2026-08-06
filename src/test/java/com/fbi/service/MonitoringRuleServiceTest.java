@@ -74,11 +74,73 @@ class MonitoringRuleServiceTest {
     }
 
     @Test
+    void create_duplicateConfiguration_throwsBadRequest() {
+        MonitoringRule existing = sampleRule();
+        when(monitoringRuleRepository.findAll()).thenReturn(List.of(existing));
+
+        MonitoringRuleRequest duplicateRequest = new MonitoringRuleRequest(
+            "A Different Name", RuleType.AMOUNT_THRESHOLD, Severity.HIGH, true,
+            new BigDecimal("10000.00"), null, null, null
+        );
+
+        assertThatThrownBy(() -> monitoringRuleService.create(duplicateRequest)).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void create_sameTypeDifferentThreshold_isNotDuplicate() {
+        MonitoringRule existing = sampleRule();
+        when(monitoringRuleRepository.findAll()).thenReturn(List.of(existing));
+        when(monitoringRuleRepository.save(any(MonitoringRule.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MonitoringRuleRequest distinctRequest = new MonitoringRuleRequest(
+            "Another Rule", RuleType.AMOUNT_THRESHOLD, Severity.HIGH, true,
+            new BigDecimal("20000"), null, null, null
+        );
+
+        MonitoringRule created = monitoringRuleService.create(distinctRequest);
+        assertThat(created.getAmountThreshold()).isEqualByComparingTo("20000");
+    }
+
+    @Test
+    void update_duplicateOfAnotherRule_throwsBadRequest() {
+        MonitoringRule existing = sampleRule();
+        existing.setId(1L);
+        MonitoringRule other = sampleRule();
+        other.setId(2L);
+        other.setName("Other Rule");
+        other.setAmountThreshold(new BigDecimal("5000"));
+        when(monitoringRuleRepository.findAll()).thenReturn(List.of(existing, other));
+
+        MonitoringRuleRequest requestMatchingExisting = new MonitoringRuleRequest(
+            "Other Rule", RuleType.AMOUNT_THRESHOLD, Severity.HIGH, true,
+            new BigDecimal("10000"), null, null, null
+        );
+
+        assertThatThrownBy(() -> monitoringRuleService.update(2L, requestMatchingExisting)).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void update_unchangedRule_doesNotConflictWithItself() {
+        MonitoringRule existing = sampleRule();
+        existing.setId(1L);
+        when(monitoringRuleRepository.findAll()).thenReturn(List.of(existing));
+        when(monitoringRuleRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(monitoringRuleRepository.save(any(MonitoringRule.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MonitoringRuleRequest sameConfigRequest = new MonitoringRuleRequest(
+            "High Amount > 10000 renamed", RuleType.AMOUNT_THRESHOLD, Severity.HIGH, true,
+            new BigDecimal("10000"), null, null, null
+        );
+
+        MonitoringRule updated = monitoringRuleService.update(1L, sameConfigRequest);
+        assertThat(updated.getName()).isEqualTo("High Amount > 10000 renamed");
+    }
+
+    @Test
     void create_amountThreshold_missingThreshold_throwsBadRequest() {
         MonitoringRuleRequest request = new MonitoringRuleRequest(
             "Rule", RuleType.AMOUNT_THRESHOLD, Severity.HIGH, true, null, null, null, null
         );
-
         assertThatThrownBy(() -> monitoringRuleService.create(request)).isInstanceOf(BadRequestException.class);
     }
 
