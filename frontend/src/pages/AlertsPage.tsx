@@ -2,55 +2,88 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { getAlerts, type AlertFilters } from '../api/alerts'
-import type { AlertResponse, AlertStatus, Severity } from '../api/types'
+import type { AlertResponse, AlertStatus, PagedResponse, Severity } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
+import { PaginationControls } from '../components/PaginationControls'
 import { StatusBadge } from '../components/StatusBadge'
 import { formatDate } from '../utils/format'
-import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const statuses: Array<AlertStatus | ''> = ['', 'OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const severities: Array<Severity | ''> = ['', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertResponse[]>([])
+
   const [filters, setFilters] = useState<AlertFilters>({ status: '', severity: '' })
+  const [appliedFilters, setAppliedFilters] = useState<AlertFilters>({ status: '', severity: '' })
+
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [totalAlerts, setTotalAlerts] = useState(0)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const pageSize = 8
 
-  const loadAlerts = useCallback(async (activeFilters = filters) => {
+  const loadAlerts = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getAlerts(activeFilters)
-      setAlerts(result)
+      const rawResult = await getAlerts({
+        ...appliedFilters,
+        search: appliedSearch,
+        page: page - 1,
+        size: pageSize,
+      })
+
+      const result: PagedResponse<AlertResponse> = Array.isArray(rawResult)
+        ? (() => {
+          const safePage = Math.max(page - 1, 0)
+          const start = safePage * pageSize
+          const end = start + pageSize
+          const totalElements = rawResult.length
+          const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / pageSize)
+          return {
+            items: rawResult.slice(start, end),
+            page: safePage,
+            size: pageSize,
+            totalElements,
+            totalPages,
+          }
+        })()
+        : rawResult
+
+      setAlerts(result.items)
+      setTotalAlerts(result.totalElements)
+
+      if (result.totalElements > 0 && result.items.length === 0 && page > 1) {
+        setPage(Math.max(1, result.totalPages))
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load alerts')
+      setAlerts([])
+      setTotalAlerts(0)
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [appliedFilters, appliedSearch, page, pageSize])
 
   useEffect(() => {
-    void loadAlerts({ status: '', severity: '' })
+    void loadAlerts()
   }, [loadAlerts])
 
-  const filteredAlerts = useMemo(() => {
-    return filterItemsByText(alerts, search, (alert) => [alert.ruleName, alert.ruleType, alert.severity, alert.status, alert.id])
-  }, [alerts, search])
-
-  const pageCount = useMemo(() => getPageCount(filteredAlerts.length, pageSize), [filteredAlerts.length])
-  const visibleAlerts = useMemo(() => paginateItems(filteredAlerts, page, pageSize), [filteredAlerts, page])
-
-  useEffect(() => {
-    setPage(1)
-  }, [filters, search])
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(totalAlerts / Math.max(1, pageSize))),
+    [pageSize, totalAlerts],
+  )
 
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
-    void loadAlerts(filters)
+    setAppliedFilters(filters)
+    setAppliedSearch(search)
+    setPage(1)
   }
 
   return (
@@ -67,7 +100,7 @@ export function AlertsPage() {
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by rule, severity, or status"
+              placeholder="Search by rule, severity, status, or account"
             />
           </label>
           <label>
@@ -100,12 +133,25 @@ export function AlertsPage() {
             <button type="submit" disabled={loading}>
               {loading ? 'Loading...' : 'Apply Filters'}
             </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setFilters({ status: '', severity: '' })
+                setAppliedFilters({ status: '', severity: '' })
+                setSearch('')
+                setAppliedSearch('')
+                setPage(1)
+              }}
+            >
+              Reset
+            </button>
           </div>
         </form>
       </section>
 
       <section className="panel">
-        <h3>Alert Results ({filteredAlerts.length})</h3>
+        <h3>Alert Investigation Queue ({totalAlerts})</h3>
         {loading ? <p>Loading alerts...</p> : null}
         <div className="table-wrap">
           <table>
@@ -121,7 +167,7 @@ export function AlertsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleAlerts.map((alert, index) => (
+              {alerts.map((alert, index) => (
                 <tr key={`${alert.id}-${alert.createdAt}-${index}`}>
                   <td>#{alert.id}</td>
                   <td>{alert.ruleName}</td>
@@ -138,7 +184,7 @@ export function AlertsPage() {
                   </td>
                 </tr>
               ))}
-              {!visibleAlerts.length ? (
+              {!alerts.length ? (
                 <tr>
                   <td className="empty-row" colSpan={7}>
                     No alerts matched the selected filters.
@@ -148,21 +194,23 @@ export function AlertsPage() {
             </tbody>
           </table>
         </div>
-        {filteredAlerts.length > pageSize ? (
-          <div className="button-row">
-            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-              Previous
-            </button>
-            <span>Page {page} of {pageCount}</span>
-            <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
-              Next
-            </button>
-          </div>
-        ) : null}
+
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          totalItems={totalAlerts}
+          totalPages={pageCount}
+          rowsPerPageOptions={[5, 8, 10, 25]}
+          onPageChange={setPage}
+          onRowsPerPageChange={(nextPageSize) => {
+            setPageSize(nextPageSize)
+            setPage(1)
+          }}
+          loading={loading}
+        />
       </section>
     </div>
   )
 }
-
 
 

@@ -2,11 +2,14 @@ package com.fbi.controller;
 
 import com.fbi.dto.MonitoringRuleRequest;
 import com.fbi.dto.MonitoringRuleResponse;
+import com.fbi.dto.PagedResponse;
 import com.fbi.service.ApiMapper;
 import com.fbi.service.MonitoringRuleService;
-import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,39 +34,47 @@ public class MonitoringRuleController {
     }
 
     @GetMapping
-    @Operation(summary = "List monitoring rules")
     public List<MonitoringRuleResponse> getAll() {
         return monitoringRuleService.getAll().stream().map(ApiMapper::toResponse).toList();
     }
 
+    @GetMapping(params = {"page", "size"})
+    public PagedResponse<MonitoringRuleResponse> getAllPaged(
+        @RequestParam(required = false) String search,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "10") int size
+    ) {
+        Pageable pageable = PageRequest.of(
+            Math.max(page, 0),
+            Math.max(size, 1),
+            Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"))
+        );
+        return ApiMapper.toPagedResponse(monitoringRuleService.getAllPaged(search, pageable), ApiMapper::toResponse);
+    }
+
     @GetMapping("/{id}")
-    @Operation(summary = "Get a monitoring rule")
     public MonitoringRuleResponse getById(@PathVariable Long id) {
         return ApiMapper.toResponse(monitoringRuleService.getById(id));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Create a monitoring rule")
     public MonitoringRuleResponse create(@RequestBody @Valid MonitoringRuleRequest request) {
         return ApiMapper.toResponse(monitoringRuleService.create(request));
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Update a monitoring rule")
     public MonitoringRuleResponse update(@PathVariable Long id, @RequestBody @Valid MonitoringRuleRequest request) {
         return ApiMapper.toResponse(monitoringRuleService.update(id, request));
     }
 
     @PatchMapping("/{id}/toggle")
-    @Operation(summary = "Toggle monitoring rule active state")
     public MonitoringRuleResponse toggle(@PathVariable Long id) {
         return ApiMapper.toResponse(monitoringRuleService.toggleActive(id));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Delete a monitoring rule")
     public void delete(@PathVariable Long id) {
         monitoringRuleService.delete(id);
     }

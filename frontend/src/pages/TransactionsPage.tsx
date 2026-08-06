@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { createTransaction, getTransactions, type TransactionFilters } from '../api/transactions'
-import type { TransactionResponse } from '../api/types'
+import type { PagedResponse, TransactionResponse, TransactionSortBy } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
+import { PaginationControls } from '../components/PaginationControls'
 import { formatCurrency, formatDate, riskBucket, toIsoFromLocalDateTime } from '../utils/format'
-import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const initialFilters: TransactionFilters = {
   accountId: '',
@@ -33,30 +33,26 @@ const createPlaceholders = {
   currency: 'USD',
 }
 
-function prioritizeCreatedTransaction(
-  loadedTransactions: TransactionResponse[],
-  createdTransaction: TransactionResponse,
-) {
-  const matchingTransaction = loadedTransactions.find((transaction) => transaction.id === createdTransaction.id)
-  const remainingTransactions = loadedTransactions.filter((transaction) => transaction.id !== createdTransaction.id)
-
-  return [matchingTransaction ?? createdTransaction, ...remainingTransactions]
-}
-
 export function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilters>(initialFilters)
+  const [appliedFilters, setAppliedFilters] = useState<TransactionFilters>(initialFilters)
   const [fromLocal, setFromLocal] = useState('')
   const [toLocal, setToLocal] = useState('')
-  const [transactions, setTransactions] = useState<TransactionResponse[]>([])
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [sortBy, setSortBy] = useState<TransactionSortBy>('TIME_DESC')
+
+  const [transactions, setTransactions] = useState<TransactionResponse[]>([])
+  const [totalTransactions, setTotalTransactions] = useState(0)
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
   const [createdTransactionId, setCreatedTransactionId] = useState<number | null>(null)
   const resultsRef = useRef<HTMLElement | null>(null)
   const [createFormKey, setCreateFormKey] = useState(0)
-  const pageSize = 8
-
   const [createForm, setCreateForm] = useState(() => createEmptyCreateForm())
 
   const resetCreateForm = useCallback(() => {
@@ -64,29 +60,64 @@ export function TransactionsPage() {
     setCreateFormKey((prev) => prev + 1)
   }, [])
 
-  const resetFilters = useCallback(() => {
-    setFilters(initialFilters)
-    setFromLocal('')
-    setToLocal('')
-  }, [])
-
-  const loadTransactions = useCallback(async (activeFilters: TransactionFilters = initialFilters) => {
+  const loadTransactions = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getTransactions(activeFilters)
-      setTransactions(result)
-      return result
+      const rawResult = await getTransactions({
+        ...appliedFilters,
+        search: appliedSearch,
+        sortBy,
+        page: page - 1,
+        size: pageSize,
+      })
+
+      const result: PagedResponse<TransactionResponse> = Array.isArray(rawResult)
+        ? (() => {
+          const sorted = [...rawResult].sort((left, right) => {
+            if (sortBy === 'AMOUNT_ASC') {
+              return Number(left.amount) - Number(right.amount)
+            }
+            if (sortBy === 'AMOUNT_DESC') {
+              return Number(right.amount) - Number(left.amount)
+            }
+            const leftTime = new Date(left.occurredAt ?? 0).getTime()
+            const rightTime = new Date(right.occurredAt ?? 0).getTime()
+            return rightTime - leftTime
+          })
+          const safePage = Math.max(page - 1, 0)
+          const start = safePage * pageSize
+          const end = start + pageSize
+          const totalElements = sorted.length
+          const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / pageSize)
+          return {
+            items: sorted.slice(start, end),
+            page: safePage,
+            size: pageSize,
+            totalElements,
+            totalPages,
+          }
+        })()
+        : rawResult
+
+      setTransactions(result.items)
+      setTotalTransactions(result.totalElements)
+
+      // If the current page became invalid after filtering/deletes, clamp back to the last valid page.
+      if (result.totalElements > 0 && result.items.length === 0 && page > 1) {
+        setPage(Math.max(1, result.totalPages))
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load transactions')
-      return []
+      setTransactions([])
+      setTotalTransactions(0)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [appliedFilters, appliedSearch, page, pageSize, sortBy])
 
   useEffect(() => {
-    void loadTransactions(initialFilters)
+    void loadTransactions()
   }, [loadTransactions])
 
   useEffect(() => {
@@ -104,38 +135,36 @@ export function TransactionsPage() {
     resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [createdTransactionId, transactions])
 
-  const filteredTransactions = useMemo(
-    () =>
-      filterItemsByText(transactions, search, (transaction) => [
-        transaction.accountId,
-        transaction.payeeId,
-        transaction.payeeName,
-        transaction.description,
-        transaction.currency,
-        transaction.status,
-        transaction.id,
-      ]),
-    [transactions, search],
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(totalTransactions / Math.max(1, pageSize))),
+    [pageSize, totalTransactions],
   )
 
-  const pageCount = getPageCount(filteredTransactions.length, pageSize)
-  const visibleTransactions = paginateItems(filteredTransactions, page, pageSize)
-
-  useEffect(() => {
+  const resetFilterState = useCallback(() => {
+    setFilters(initialFilters)
+    setAppliedFilters(initialFilters)
+    setFromLocal('')
+    setToLocal('')
+    setSearch('')
+    setAppliedSearch('')
+    setSortBy('TIME_DESC')
     setPage(1)
-  }, [filters, search])
+  }, [])
 
   const onFilterSubmit = (event: FormEvent) => {
     event.preventDefault()
     setCreatedTransactionId(null)
-    setPage(1)
+
     const queryFilters: TransactionFilters = {
       ...filters,
       from: toIsoFromLocalDateTime(fromLocal) ?? '',
       to: toIsoFromLocalDateTime(toLocal) ?? '',
     }
+
     setFilters(queryFilters)
-    void loadTransactions(queryFilters)
+    setAppliedFilters(queryFilters)
+    setAppliedSearch(search)
+    setPage(1)
   }
 
   const onCreateSubmit = async (event: FormEvent) => {
@@ -153,10 +182,7 @@ export function TransactionsPage() {
       })
 
       resetCreateForm()
-      resetFilters()
-
-      const refreshedTransactions = await loadTransactions(initialFilters)
-      setTransactions(prioritizeCreatedTransaction(refreshedTransactions, createdTransaction))
+      resetFilterState()
       setCreatedTransactionId(createdTransaction.id)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to create transaction')
@@ -180,7 +206,7 @@ export function TransactionsPage() {
               autoComplete="new-password"
               data-lpignore="true"
               data-1p-ignore="true"
-              value={createForm.accountId ?? ''}
+              value={createForm.accountId}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, accountId: event.target.value }))}
               placeholder={createPlaceholders.accountId}
               required
@@ -194,7 +220,7 @@ export function TransactionsPage() {
               autoComplete="new-password"
               data-lpignore="true"
               data-1p-ignore="true"
-              value={createForm.payeeId ?? ''}
+              value={createForm.payeeId}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, payeeId: event.target.value }))}
               placeholder={createPlaceholders.payeeId}
               required
@@ -209,7 +235,7 @@ export function TransactionsPage() {
               id="tx-create-amount"
               name="tx-create-amount"
               autoComplete="off"
-              value={createForm.amount ?? ''}
+              value={createForm.amount}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, amount: event.target.value }))}
               placeholder={createPlaceholders.amount}
               required
@@ -221,7 +247,7 @@ export function TransactionsPage() {
               id="tx-create-currency"
               name="tx-create-currency"
               autoComplete="off"
-              value={createForm.currency ?? ''}
+              value={createForm.currency}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, currency: event.target.value }))}
               placeholder={createPlaceholders.currency}
               required
@@ -235,7 +261,7 @@ export function TransactionsPage() {
               id="tx-create-occurred-at"
               name="tx-create-occurred-at"
               autoComplete="off"
-              value={createForm.occurredAt ?? ''}
+              value={createForm.occurredAt}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, occurredAt: event.target.value }))}
             />
           </label>
@@ -245,7 +271,7 @@ export function TransactionsPage() {
               id="tx-create-description"
               name="tx-create-description"
               autoComplete="off"
-              value={createForm.description ?? ''}
+              value={createForm.description}
               onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
               placeholder="Optional context"
             />
@@ -261,11 +287,8 @@ export function TransactionsPage() {
             Search
             <input
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-              placeholder="Search by account, payee, or description"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by account, payee, status, or ID"
             />
           </label>
           <label>
@@ -316,6 +339,14 @@ export function TransactionsPage() {
               onChange={(event) => setToLocal(event.target.value)}
             />
           </label>
+          <label>
+            Sort
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as TransactionSortBy)}>
+              <option value="TIME_DESC">Newest First</option>
+              <option value="AMOUNT_DESC">Amount High to Low</option>
+              <option value="AMOUNT_ASC">Amount Low to High</option>
+            </select>
+          </label>
           <div className="button-row span-2">
             <button type="submit" disabled={loading}>
               {loading ? 'Searching...' : 'Apply Filters'}
@@ -325,8 +356,7 @@ export function TransactionsPage() {
               className="ghost"
               onClick={() => {
                 setCreatedTransactionId(null)
-                resetFilters()
-                void loadTransactions(initialFilters)
+                resetFilterState()
               }}
             >
               Reset
@@ -336,7 +366,7 @@ export function TransactionsPage() {
       </section>
 
       <section ref={resultsRef} className="panel">
-        <h3>Transaction Results ({filteredTransactions.length})</h3>
+        <h3>Transaction Ledger ({totalTransactions})</h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -351,7 +381,7 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleTransactions.map((transaction) => (
+              {transactions.map((transaction) => (
                 <tr
                   key={transaction.id}
                   id={`transaction-row-${transaction.id}`}
@@ -368,7 +398,7 @@ export function TransactionsPage() {
                   <td>{transaction.description || '--'}</td>
                 </tr>
               ))}
-              {!visibleTransactions.length ? (
+              {!transactions.length ? (
                 <tr>
                   <td className="empty-row" colSpan={7}>
                     No transactions found for the current filters.
@@ -378,22 +408,22 @@ export function TransactionsPage() {
             </tbody>
           </table>
         </div>
-        {filteredTransactions.length > pageSize ? (
-          <div className="button-row">
-            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-              Previous
-            </button>
-            <span>Page {page} of {pageCount}</span>
-            <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
-              Next
-            </button>
-          </div>
-        ) : null}
+
+        <PaginationControls
+          page={page}
+          pageSize={pageSize}
+          totalItems={totalTransactions}
+          totalPages={totalPages}
+          rowsPerPageOptions={[5, 8, 10, 25]}
+          onPageChange={setPage}
+          onRowsPerPageChange={(nextPageSize) => {
+            setPageSize(nextPageSize)
+            setPage(1)
+          }}
+          loading={loading}
+        />
       </section>
     </div>
   )
 }
-
-
-
 
