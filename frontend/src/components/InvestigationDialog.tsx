@@ -109,13 +109,13 @@ export function InvestigationDialog({
 
       <DialogContent dividers sx={{ pt: 2 }}>
         <WorkflowActions
-          key={alert.id}
+          key={`workflow-${alert.id}`}
           currentStatus={alert.status}
           onWorkflowStatusChange={onWorkflowStatusChange}
         />
 
         <InvestigationNotes
-          key={alert.id}
+          key={`notes-${alert.id}`}
           notes={notes}
           onPost={onPostNote}
         />

@@ -12,6 +12,14 @@ import type { WorkflowStatus } from '../models/alertModels'
 
 const WORKFLOW_STEPS: WorkflowStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED']
 
+const NEXT_VALID_STATUSES: Record<WorkflowStatus, WorkflowStatus[]> = {
+  OPEN: ['ACKNOWLEDGED', 'DISMISSED'],
+  ACKNOWLEDGED: ['INVESTIGATING', 'DISMISSED'],
+  INVESTIGATING: ['CLOSED', 'DISMISSED'],
+  CLOSED: [],
+  DISMISSED: [],
+}
+
 const STATUS_LABEL: Record<WorkflowStatus, string> = {
   OPEN: 'Open',
   ACKNOWLEDGED: 'Acknowledge',
@@ -74,11 +82,7 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange, onClose
     })
   }, [currentStatus])
 
-  const currentIndex = WORKFLOW_STEPS.indexOf(currentStatus)
-  const remainingStatuses: WorkflowStatus[] = [
-    ...(currentIndex >= 0 ? WORKFLOW_STEPS.slice(currentIndex + 1) : []),
-    ...(currentStatus !== 'DISMISSED' ? ['DISMISSED'] as WorkflowStatus[] : []),
-  ]
+  const remainingStatuses = NEXT_VALID_STATUSES[currentStatus] ?? []
 
   const handleStatusClick = (status: WorkflowStatus) => {
     if (status === 'CLOSED' && onClose) {
