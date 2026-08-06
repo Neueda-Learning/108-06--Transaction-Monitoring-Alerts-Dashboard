@@ -9,7 +9,6 @@ import {
   Clock3,
   Copy,
   Download,
-  FileCode2,
   LayoutDashboard,
   Moon,
   PlaySquare,
@@ -33,7 +32,6 @@ import {
 } from 'recharts'
 import { toast } from 'react-hot-toast'
 import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
-import { apiRequest } from './api/client'
 import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
@@ -61,7 +59,6 @@ type TabType =
   | 'alerts'
   | 'rules'
   | 'simulator'
-  | 'apidocs'
 
 const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -69,27 +66,11 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
   { id: 'alerts', label: 'Alerts', icon: ShieldAlert },
   { id: 'rules', label: 'Monitoring Rules', icon: SlidersHorizontal },
   { id: 'simulator', label: 'Simulator', icon: PlaySquare },
-  { id: 'apidocs', label: 'API Docs', icon: FileCode2 },
 ]
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
 const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
-
-const API_DOCS = [
-  { method: 'GET', path: '/api/transactions' },
-  { method: 'POST', path: '/api/transactions' },
-  { method: 'GET', path: '/api/alerts' },
-  { method: 'GET', path: '/api/alerts/{id}' },
-  { method: 'PATCH', path: '/api/alerts/{id}/status' },
-  { method: 'GET', path: '/api/rules' },
-  { method: 'GET', path: '/api/rules/{id}' },
-  { method: 'POST', path: '/api/rules' },
-  { method: 'PUT', path: '/api/rules/{id}' },
-  { method: 'DELETE', path: '/api/rules/{id}' },
-  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
-  { method: 'GET', path: '/api/sdn/count' },
-]
 
 const TX_CREATE_PLACEHOLDERS = {
   accountId: 'ACC-001',
@@ -178,11 +159,6 @@ function App() {
     currency: '',
     description: '',
   })
-
-  const [apiEndpoint, setApiEndpoint] = useState(API_DOCS[0].path)
-  const [apiMethod, setApiMethod] = useState(API_DOCS[0].method)
-  const [apiBody, setApiBody] = useState('{\n  "accountId": "ACC-001",\n  "payeeId": "PAYEE-009",\n  "amount": 500,\n  "currency": "GBP"\n}')
-  const [apiResponse, setApiResponse] = useState('')
 
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
@@ -826,20 +802,6 @@ function App() {
       dailyLimit: rule.dailyLimit,
     })
     await loadAll()
-  }
-
-  const runApiRequest = async () => {
-    setApiResponse('Running request...')
-    try {
-      const payload = apiMethod === 'GET' || apiMethod === 'DELETE' ? undefined : JSON.parse(apiBody)
-      const result = await apiRequest<unknown>(apiEndpoint, {
-        method: apiMethod,
-        body: payload ? JSON.stringify(payload) : undefined,
-      })
-      setApiResponse(JSON.stringify(result, null, 2))
-    } catch (requestError) {
-      setApiResponse(requestError instanceof Error ? requestError.message : 'Request failed')
-    }
   }
 
   const pageTitle = TABS.find((entry) => entry.id === activeTab)?.label ?? 'Dashboard'
@@ -1616,65 +1578,6 @@ function App() {
                 )}
               </article>
             ) : null}
-          </section>
-        ) : null}
-
-        {activeTab === 'apidocs' ? (
-          <section className="panel-stack">
-            <article className="card">
-              <h3>OpenAPI / REST API Docs & Live Runner</h3>
-              <div className="split-grid">
-                <div>
-                  <h4>Endpoints</h4>
-                  <ul className="mono endpoint-list">
-                    {API_DOCS.map((entry) => (
-                      <li key={`${entry.method}-${entry.path}`}>
-                        <button
-                          type="button"
-                          className="ghost endpoint-btn"
-                          onClick={() => {
-                            setApiMethod(entry.method)
-                            setApiEndpoint(entry.path.replace('{id}', '1'))
-                          }}
-                        >
-                          {entry.method} {entry.path}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="api-runner">
-                  <label>
-                    Method
-                    <select value={apiMethod} onChange={(event) => setApiMethod(event.target.value)}>
-                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => <option key={method} value={method}>{method}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Endpoint
-                    <input className="mono" value={apiEndpoint} onChange={(event) => setApiEndpoint(event.target.value)} />
-                  </label>
-                  <label>
-                    JSON Body
-                    <textarea className="mono api-body" value={apiBody} onChange={(event) => setApiBody(event.target.value)} />
-                  </label>
-                  <div className="api-runner-actions">
-                    <button type="button" className="primary" onClick={() => void runApiRequest()}>Run Request</button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => {
-                        const openApiJson = JSON.stringify({ openapi: '3.0.0', paths: API_DOCS }, null, 2)
-                        void navigator.clipboard.writeText(openApiJson)
-                      }}
-                    >
-                      Copy OpenAPI 3.0 JSON
-                    </button>
-                  </div>
-                  <pre className="response-box mono">{apiResponse || 'Response output will appear here.'}</pre>
-                </div>
-              </div>
-            </article>
           </section>
         ) : null}
 
