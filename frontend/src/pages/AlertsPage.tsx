@@ -121,8 +121,8 @@ export function AlertsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleAlerts.map((alert) => (
-                <tr key={alert.id}>
+              {visibleAlerts.map((alert, index) => (
+                <tr key={`${alert.id}-${alert.createdAt}-${index}`}>
                   <td>#{alert.id}</td>
                   <td>{alert.ruleName}</td>
                   <td>{alert.ruleType}</td>

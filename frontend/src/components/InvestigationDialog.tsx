@@ -76,7 +76,7 @@ export function InvestigationDialog({
       }}
     >
       <DialogTitle sx={{ pb: 1.25, pr: 6 }}>
-        <Typography variant="h6" sx={{ fontWeight: 800 }}>Alert Investigation</Typography>
+        <Typography component="span" variant="h6" sx={{ fontWeight: 800 }}>Alert Investigation</Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.25, flexWrap: 'wrap' }}>
           <Chip
             label={`Alert ID: ${formatAlertRef(alert.id)}`}

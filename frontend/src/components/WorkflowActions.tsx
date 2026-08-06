@@ -194,7 +194,7 @@ export function WorkflowActions({ currentStatus, onWorkflowStatusChange, onClose
             const colors = STATUS_COLOR[entry.status]
             return (
               <Box
-                key={`${entry.timestamp}-${index}`}
+                key={`${entry.status}-${entry.timestamp}-${entry.action}-${index}`}
                 sx={{
                   display: 'flex',
                   alignItems: 'center',

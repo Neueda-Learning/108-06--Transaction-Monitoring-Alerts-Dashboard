@@ -96,9 +96,9 @@ export function InvestigationNotes({ notes, loading, onPost }: InvestigationNote
           <EmptyState message="No investigation notes yet." />
         ) : (
           <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {[...notes].reverse().map((note) => (
+            {[...notes].reverse().map((note, index) => (
               <Box
-                key={note.id}
+                key={`${note.id}-${note.createdAt}-${index}`}
                 sx={{
                   display: 'flex',
                   gap: 1.5,

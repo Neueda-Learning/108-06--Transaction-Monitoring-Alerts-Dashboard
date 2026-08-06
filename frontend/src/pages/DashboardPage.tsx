@@ -111,8 +111,8 @@ export function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {data?.alerts.slice(0, 8).map((alert) => (
-                  <tr key={alert.id}>
+                {data?.alerts.slice(0, 8).map((alert, index) => (
+                  <tr key={`${alert.id}-${alert.createdAt}-${index}`}>
                     <td>#{alert.id}</td>
                     <td>{alert.ruleName}</td>
                     <td>
