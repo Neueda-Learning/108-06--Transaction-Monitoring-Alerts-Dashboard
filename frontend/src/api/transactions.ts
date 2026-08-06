@@ -20,9 +20,11 @@ export interface TransactionFilters {
   sortBy?: TransactionSortBy
 }
 
+export function getTransactions(filters?: TransactionFilters): Promise<TransactionResponse[]>
+export function getTransactions(filters: TransactionFilters & PaginationParams): Promise<PagedResponse<TransactionResponse>>
 export function getTransactions(
   filters: (TransactionFilters & PaginationParams) = {},
-): Promise<TransactionResponse[] | PagedResponse<TransactionResponse>> {
+) {
   const { page, size, ...query } = filters
   const params = page !== undefined && size !== undefined ? { ...query, page, size } : query
   return apiRequest<TransactionResponse[] | PagedResponse<TransactionResponse>>('/api/transactions', { params })

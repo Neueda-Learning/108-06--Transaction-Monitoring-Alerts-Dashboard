@@ -1,9 +1,14 @@
 import userEvent from '@testing-library/user-event'
 import { render, screen, waitFor } from '@testing-library/react'
+import type { Mock } from 'vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MonitoringRuleResponse } from '../api/types'
 import * as rulesApi from '../api/rules'
+import type { RuleFilters } from '../api/rules'
 import { RulesPage } from './RulesPage'
+
+// vi.mocked() collapses overloaded functions to their last signature; cast to the non-paginated overload used by these tests.
+const getRulesMock = rulesApi.getRules as unknown as Mock<(filters?: RuleFilters) => Promise<MonitoringRuleResponse[]>>
 
 const { toastSuccess } = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
@@ -39,7 +44,7 @@ function makeRule(id: number, overrides: Partial<MonitoringRuleResponse> = {}): 
 
 describe('RulesPage', () => {
   beforeEach(() => {
-    vi.mocked(rulesApi.getRules).mockResolvedValue([])
+    getRulesMock.mockResolvedValue([])
     vi.mocked(rulesApi.createRule).mockResolvedValue(makeRule(100))
     vi.mocked(rulesApi.updateRule).mockResolvedValue(makeRule(101))
     vi.mocked(rulesApi.deleteRule).mockResolvedValue(undefined)
@@ -47,7 +52,7 @@ describe('RulesPage', () => {
   })
 
   it('shows loading state, then renders loaded rules and exact fetch count', async () => {
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce([
+    getRulesMock.mockResolvedValueOnce([
       makeRule(1, { name: 'High Amount', severity: 'HIGH' }),
       makeRule(2, { name: 'Daily Limit', type: 'DAILY_LIMIT' }),
     ])
@@ -62,7 +67,7 @@ describe('RulesPage', () => {
   })
 
   it('shows the exact error text when initial load fails', async () => {
-    vi.mocked(rulesApi.getRules).mockRejectedValueOnce(new Error('load failed'))
+    getRulesMock.mockRejectedValueOnce(new Error('load failed'))
 
     render(<RulesPage />)
 
@@ -134,7 +139,7 @@ describe('RulesPage', () => {
 
   it('enters edit mode and allows cancel back to create mode', async () => {
     const user = userEvent.setup()
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce([
+    getRulesMock.mockResolvedValueOnce([
       makeRule(7, { name: 'Rule To Edit', type: 'DAILY_LIMIT', dailyLimit: 5000 }),
     ])
 
@@ -156,7 +161,7 @@ describe('RulesPage', () => {
 
   it('updates an existing DAILY_LIMIT rule exactly and reloads after submit', async () => {
     const user = userEvent.setup()
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce([
+    getRulesMock.mockResolvedValueOnce([
       makeRule(7, { name: 'Rule To Edit', type: 'DAILY_LIMIT', dailyLimit: 5000 }),
     ])
 
@@ -189,7 +194,7 @@ describe('RulesPage', () => {
 
   it('does not delete when confirmation is declined', async () => {
     const user = userEvent.setup()
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce([makeRule(5, { name: 'Rule To Delete' })])
+    getRulesMock.mockResolvedValueOnce([makeRule(5, { name: 'Rule To Delete' })])
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
@@ -206,7 +211,7 @@ describe('RulesPage', () => {
 
   it('deletes after confirmation and reloads the list exactly once', async () => {
     const user = userEvent.setup()
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce([makeRule(5, { name: 'Rule To Delete' })])
+    getRulesMock.mockResolvedValueOnce([makeRule(5, { name: 'Rule To Delete' })])
 
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -235,7 +240,7 @@ describe('RulesPage', () => {
         active: index === 8 ? false : true,
       }),
     )
-    vi.mocked(rulesApi.getRules).mockResolvedValue(manyRules)
+    getRulesMock.mockResolvedValue(manyRules)
 
     render(<RulesPage />)
 
