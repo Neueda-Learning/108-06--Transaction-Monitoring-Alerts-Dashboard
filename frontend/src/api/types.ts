@@ -20,6 +20,14 @@ export interface TransactionResponse {
   riskScore: number
 }
 
+export interface PagedResponse<T> {
+  items: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
 export interface TransactionCreateRequest {
   accountId: string
   payeeId: string
@@ -29,6 +37,13 @@ export interface TransactionCreateRequest {
   country?: string | null
   occurredAt?: string | null
   description?: string | null
+}
+
+export type TransactionSortBy = 'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'
+
+export interface PaginationParams {
+  page?: number
+  size?: number
 }
 
 export interface AlertResponse {

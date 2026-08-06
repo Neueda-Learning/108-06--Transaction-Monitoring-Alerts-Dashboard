@@ -16,6 +16,9 @@ import com.fbi.repository.MonitoredTransactionRepository;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -46,6 +49,10 @@ public class AlertService {
             return alertRepository.findBySeverity(severity);
         }
         return alertRepository.findAll();
+    }
+
+    public Page<Alert> getAlertsPaged(AlertStatus status, Severity severity, String search, Pageable pageable) {
+        return alertRepository.findAll(buildSearchSpecification(status, severity, search), pageable);
     }
 
     public Alert getById(Long id) {
@@ -173,6 +180,31 @@ public class AlertService {
         if (!valid) {
             throw new BadRequestException("Invalid alert status transition: " + current + " -> " + target);
         }
+    }
+
+    private Specification<Alert> buildSearchSpecification(AlertStatus status, Severity severity, String search) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (severity != null) {
+                predicates.add(cb.equal(root.get("severity"), severity));
+            }
+            if (search != null && !search.isBlank()) {
+                String like = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                    cb.like(cb.lower(root.get("ruleName")), like),
+                    cb.like(cb.lower(root.get("ruleType").as(String.class)), like),
+                    cb.like(cb.lower(root.get("severity").as(String.class)), like),
+                    cb.like(cb.lower(root.get("status").as(String.class)), like),
+                    cb.like(cb.lower(root.get("accountId")), like),
+                    cb.like(root.get("transactionId").as(String.class), like),
+                    cb.like(root.get("id").as(String.class), like)
+                ));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
     }
 }
 

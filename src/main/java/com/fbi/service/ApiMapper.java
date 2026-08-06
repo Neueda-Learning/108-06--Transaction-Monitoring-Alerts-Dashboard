@@ -1,11 +1,14 @@
 package com.fbi.service;
 
 import com.fbi.dto.AlertResponse;
+import com.fbi.dto.PagedResponse;
 import com.fbi.dto.MonitoringRuleResponse;
 import com.fbi.dto.TransactionResponse;
 import com.fbi.model.Alert;
 import com.fbi.model.MonitoredTransaction;
 import com.fbi.model.MonitoringRule;
+import java.util.function.Function;
+import org.springframework.data.domain.Page;
 
 public final class ApiMapper {
 
@@ -59,6 +62,16 @@ public final class ApiMapper {
             rule.getVelocityCount(),
             rule.getVelocityWindowMinutes(),
             rule.getDailyLimit()
+        );
+    }
+
+    public static <S, T> PagedResponse<T> toPagedResponse(Page<S> page, Function<S, T> mapper) {
+        return new PagedResponse<>(
+            page.getContent().stream().map(mapper).toList(),
+            page.getNumber(),
+            page.getSize(),
+            page.getTotalElements(),
+            page.getTotalPages()
         );
     }
 }

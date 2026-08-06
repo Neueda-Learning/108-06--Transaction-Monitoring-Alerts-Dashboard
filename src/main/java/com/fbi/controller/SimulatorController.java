@@ -2,7 +2,6 @@ package com.fbi.controller;
 
 import com.fbi.dto.SimulationResult;
 import com.fbi.service.SimulatorService;
-import io.swagger.v3.oas.annotations.Operation;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,7 +21,6 @@ public class SimulatorController {
     }
 
     @GetMapping("/scenarios")
-    @Operation(summary = "List available simulator scenarios")
     public List<Map<String, String>> listScenarios() {
         return SimulatorService.SCENARIOS.entrySet().stream()
             .map(entry -> Map.of("scenario", entry.getKey(), "description", entry.getValue()))
@@ -30,7 +28,6 @@ public class SimulatorController {
     }
 
     @PostMapping("/scenarios/{scenario}")
-    @Operation(summary = "Run a preset simulator scenario and return the generated transactions and alerts")
     public SimulationResult runScenario(@PathVariable String scenario) {
         return simulatorService.runScenario(scenario);
     }
