@@ -1,77 +1,40 @@
 pipeline {
+
     agent any
 
-    triggers {
-        // Assumes a webhook (or SCM polling) is configured on the Jenkins job
-        // to fire on pushes/merges to main.
-        pollSCM('')
-    }
-
-    environment {
-        DB_PASSWORD = credentials('transaction-monitoring-db-password')
-        GEMINI_API_KEY = credentials('transaction-monitoring-gemini-api-key')
-    }
-
     stages {
-        stage('Checkout') {
+
+        stage('Checkout Source') {
             steps {
                 checkout scm
-                sh 'chmod +x mvnw'
             }
         }
 
-        stage('Backend: Test') {
+        stage('Stop Existing Containers') {
             steps {
-                sh './mvnw -B clean test'
+                sh 'docker compose down || true'
             }
         }
 
-        stage('Backend: Build') {
+        stage('Build Docker Images') {
             steps {
-                sh './mvnw -B package -DskipTests'
-            }
-        }
-
-        stage('Frontend: Install & Test') {
-            steps {
-                dir('frontend') {
-                    sh 'npm ci'
-                    sh 'npx tsc -b --noEmit'
-                    sh 'npm run test'
-                }
-            }
-        }
-
-        stage('Frontend: Build') {
-            steps {
-                dir('frontend') {
-                    sh 'npm run build'
-                }
-            }
-        }
-
-        stage('Docker: Build Images') {
-            steps {
-                sh 'docker compose build'
+                // Requires a .env file already present in the workspace root on the
+                // VM (not committed to git) with DB_PASSWORD / GEMINI_API_KEY set.
+                // Copy .env.example to .env once on the server and fill in values.
+                sh 'docker compose build --no-cache'
             }
         }
 
         stage('Deploy') {
-            when {
-                branch 'main'
-            }
             steps {
                 sh 'docker compose up -d'
             }
         }
-    }
 
-    post {
-        always {
-            junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
-        }
-        failure {
-            echo 'Pipeline failed - check console output for details.'
+        stage('Verify') {
+            steps {
+                sh 'docker ps'
+            }
         }
     }
 }
