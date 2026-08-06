@@ -1,6 +1,9 @@
 pipeline {
-
     agent any
+
+    environment {
+        COMPOSE_CMD = 'docker-compose'
+    }
 
     stages {
 
@@ -10,30 +13,34 @@ pipeline {
             }
         }
 
+        stage('Validate Env File') {
+            steps {
+                sh 'test -f .env || cp .env.example .env'
+            }
+        }
+
         stage('Stop Existing Containers') {
             steps {
-                sh 'docker compose down || true'
+                sh "${COMPOSE_CMD} down || true"
             }
         }
 
         stage('Build Docker Images') {
             steps {
-                // Requires a .env file already present in the workspace root on the
-                // VM (not committed to git) with DB_PASSWORD / GEMINI_API_KEY set.
-                // Copy .env.example to .env once on the server and fill in values.
-                sh 'docker compose build --no-cache'
+                sh "${COMPOSE_CMD} config"
+                sh "${COMPOSE_CMD} build --no-cache"
             }
         }
 
         stage('Deploy') {
             steps {
-                sh 'docker compose up -d'
+                sh "${COMPOSE_CMD} up -d"
             }
         }
 
         stage('Verify') {
             steps {
-                sh 'docker ps'
+                sh "${COMPOSE_CMD} ps"
             }
         }
     }
