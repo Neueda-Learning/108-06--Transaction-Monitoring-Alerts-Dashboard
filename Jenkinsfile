@@ -3,6 +3,7 @@ pipeline {
 
     environment {
         COMPOSE_CMD = 'docker-compose'
+        COMPOSE_FILE = 'docker-compose.yml'
     }
 
     stages {
@@ -15,32 +16,38 @@ pipeline {
 
         stage('Validate Env File') {
             steps {
-                sh 'test -f .env || cp .env.example .env'
+                sh 'cd "$WORKSPACE" && test -f .env || cp .env.example .env'
+            }
+        }
+
+        stage('Validate Compose File') {
+            steps {
+                sh 'cd "$WORKSPACE" && pwd && ls -la && test -f ${COMPOSE_FILE}'
             }
         }
 
         stage('Stop Existing Containers') {
             steps {
-                sh "${COMPOSE_CMD} down || true"
+                sh 'cd "$WORKSPACE" && ${COMPOSE_CMD} -f ${COMPOSE_FILE} down || true'
             }
         }
 
         stage('Build Docker Images') {
             steps {
-                sh "${COMPOSE_CMD} config"
-                sh "${COMPOSE_CMD} build --no-cache"
+                sh 'cd "$WORKSPACE" && ${COMPOSE_CMD} -f ${COMPOSE_FILE} config'
+                sh 'cd "$WORKSPACE" && ${COMPOSE_CMD} -f ${COMPOSE_FILE} build --no-cache'
             }
         }
 
         stage('Deploy') {
             steps {
-                sh "${COMPOSE_CMD} up -d"
+                sh 'cd "$WORKSPACE" && ${COMPOSE_CMD} -f ${COMPOSE_FILE} up -d'
             }
         }
 
         stage('Verify') {
             steps {
-                sh "${COMPOSE_CMD} ps"
+                sh 'cd "$WORKSPACE" && ${COMPOSE_CMD} -f ${COMPOSE_FILE} ps'
             }
         }
     }
