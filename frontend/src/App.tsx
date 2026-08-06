@@ -54,7 +54,14 @@ import type {
   TransactionStatus,
 } from './api/types'
 import type { InvestigationNote } from './models/alertModels'
-import { formatCurrency, formatDate, riskBucket } from './utils/format'
+import {
+  ALERT_SLA_BREACH_MINUTES,
+  formatAlertAge,
+  formatCurrency,
+  formatDate,
+  getAlertAgeMinutes,
+  riskBucket,
+} from './utils/format'
 
 // Lazy-loaded so the MUI dependency it pulls in isn't part of the initial bundle.
 const InvestigationDialog = lazy(() =>
@@ -314,6 +321,11 @@ function App() {
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter((entry) => !['CLOSED', 'DISMISSED'].includes(entry.status)).length
     const highSeverity = alerts.filter((entry) => entry.severity === 'HIGH').length
+    const slaBreaches = alerts.filter(
+      (entry) =>
+        !['CLOSED', 'DISMISSED'].includes(entry.status) &&
+        getAlertAgeMinutes(entry.createdAt) > ALERT_SLA_BREACH_MINUTES,
+    ).length
     const alertsToday = alerts.filter((entry) => {
       const created = new Date(entry.createdAt)
       return created.toDateString() === new Date().toDateString()
@@ -326,6 +338,7 @@ function App() {
     return {
       openAlerts,
       highSeverity,
+      slaBreaches,
       alertsToday,
       txToday,
       totalTransactions: transactions.length,
@@ -1006,24 +1019,34 @@ function App() {
         {activeTab === 'dashboard' ? (
           <div className="panel-stack">
             <section className="kpi-grid">
-              <article className="card metric-card metric-accent-blue">
-                <div className="metric-card-head">
-                  <span className="metric-icon metric-icon-blue">
-                    <ArrowLeftRight size={16} />
-                  </span>
-                  <h3>Total Recorded Transactions</h3>
-                </div>
-                <p>{metrics.totalTransactions}</p>
-                <span className="trend up">+{weekTrend.transactions}% WoW</span>
-              </article>
               <article className="card metric-card metric-accent-red">
                 <div className="metric-card-head">
                   <span className="metric-icon metric-icon-red">
+                    <Clock3 size={16} />
+                  </span>
+                  <h3>Alerts Breaching SLA</h3>
+                </div>
+                <p className="critical">{metrics.slaBreaches}</p>
+                <span className="trend neutral">Over {ALERT_SLA_BREACH_MINUTES / 60}h open</span>
+              </article>
+              <article className="card metric-card metric-accent-amber">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-amber">
+                    <ShieldAlert size={16} />
+                  </span>
+                  <h3>Open Alerts Needing Action</h3>
+                </div>
+                <p>{metrics.openAlerts}</p>
+                <span className="trend neutral">Awaiting review</span>
+              </article>
+              <article className="card metric-card metric-accent-blue">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-blue">
                     <AlertTriangle size={16} />
                   </span>
                   <h3>Flagged High-Risk Alerts</h3>
                 </div>
-                <p className="critical">{metrics.highSeverity}</p>
+                <p>{metrics.highSeverity}</p>
                 <span className="trend down">{weekTrend.alerts}% WoW</span>
               </article>
               <article className="card metric-card metric-accent-green">
@@ -1160,37 +1183,46 @@ function App() {
                       <th>Rule Name</th>
                       <th>Account</th>
                       <th>Status</th>
-                      <th>Created</th>
+                      <th>Age</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {activeWorkloadAlerts.map((entry, index) => (
-                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
-                        <td className="mono">#{entry.id}</td>
-                        <td>
-                          <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
-                        </td>
-                        <td>{entry.ruleName}</td>
-                        <td className="mono">{entry.accountId}</td>
-                        <td>
-                          <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
-                        </td>
-                        <td className="mono">{formatDate(entry.createdAt)}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="ghost"
-                            onClick={() => {
-                              setActiveTab('alerts')
-                              openInvestigateDialog(entry.id)
-                            }}
-                          >
-                            Investigate
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {activeWorkloadAlerts.map((entry, index) => {
+                      const ageMinutes = getAlertAgeMinutes(entry.createdAt)
+                      const breachingSla = ageMinutes > ALERT_SLA_BREACH_MINUTES
+                      return (
+                        <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
+                          <td className="mono">#{entry.id}</td>
+                          <td>
+                            <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
+                          </td>
+                          <td>
+                            <div>{entry.ruleName}</div>
+                            <div className="muted alert-trigger-context">{entry.message}</div>
+                          </td>
+                          <td className="mono">{entry.accountId}</td>
+                          <td>
+                            <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
+                          </td>
+                          <td className={breachingSla ? 'mono alert-age-breach' : 'mono'}>
+                            {formatAlertAge(ageMinutes)}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={() => {
+                                setActiveTab('alerts')
+                                openInvestigateDialog(entry.id)
+                              }}
+                            >
+                              Investigate
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {!activeWorkloadAlerts.length ? (
                       <tr>
                         <td colSpan={7} className="muted">
