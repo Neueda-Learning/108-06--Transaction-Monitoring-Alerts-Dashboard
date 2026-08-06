@@ -176,6 +176,7 @@ function App() {
 
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
+  const simulatorResultRef = useRef<HTMLElement | null>(null)
 
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
   const [showDashboardSummary, setShowDashboardSummary] = useState(false)
@@ -666,6 +667,17 @@ function App() {
   useEffect(() => {
     setCreatedTxId(null)
   }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
+
+  useEffect(() => {
+    if (activeTab !== 'simulator' || simulatorResult === null) {
+      return
+    }
+
+    simulatorResultRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }, [activeTab, simulatorResult])
 
   const selectedTx = useMemo(
     () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
@@ -1645,7 +1657,7 @@ function App() {
             </article>
 
             {simulatorResult ? (
-              <article className="card">
+              <article ref={simulatorResultRef} className="card">
                 <h3>Last Run: {simulatorResult.scenario}</h3>
                 <p className="muted">{simulatorResult.description}</p>
 
