@@ -235,25 +235,26 @@ describe('RulesPage', () => {
         active: index === 8 ? false : true,
       }),
     )
-    vi.mocked(rulesApi.getRules).mockResolvedValueOnce(manyRules)
+    vi.mocked(rulesApi.getRules).mockResolvedValue(manyRules)
 
     render(<RulesPage />)
 
     expect(await screen.findByText('Rule 1')).toBeInTheDocument()
-    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
     expect(screen.queryByText('Velocity Ninth')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page')
     expect(await screen.findByText('Velocity Ninth')).toBeInTheDocument()
 
-    await user.clear(screen.getByPlaceholderText('Search by name, type, or severity'))
-    await user.type(screen.getByPlaceholderText('Search by name, type, or severity'), 'inactive')
+    await user.clear(screen.getByPlaceholderText('Search by name, type, severity, or active state'))
+    await user.type(screen.getByPlaceholderText('Search by name, type, severity, or active state'), 'inactive')
+    await user.click(screen.getByRole('button', { name: 'Apply Search' }))
 
     expect(await screen.findByText('Configured Rules (1)')).toBeInTheDocument()
     expect(screen.getByText('Velocity Ninth')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Previous' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 })
 

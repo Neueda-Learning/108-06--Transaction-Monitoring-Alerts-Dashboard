@@ -79,7 +79,6 @@ Once both are running:
 |-----------|-----|
 | 🎨 **Frontend Dashboard** | http://localhost:5173 |
 | 📡 **Backend API** | http://localhost:8080 |
-| 📚 **API Documentation** | http://localhost:8080/swagger-ui.html |
 
 ## 🛑 Stop Everything
 

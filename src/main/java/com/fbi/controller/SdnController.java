@@ -2,7 +2,6 @@ package com.fbi.controller;
 
 import com.fbi.service.SdnScreeningService;
 import com.fbi.service.SdnScreeningService.SdnMatchResult;
-import io.swagger.v3.oas.annotations.Operation;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,7 +19,6 @@ public class SdnController {
     }
 
     @GetMapping("/search")
-    @Operation(summary = "Search SDN list by name with fuzzy matching")
     public List<SdnMatchResult> search(
         @RequestParam String name,
         @RequestParam(defaultValue = "0.80") double threshold
@@ -29,7 +27,6 @@ public class SdnController {
     }
 
     @GetMapping("/count")
-    @Operation(summary = "Get the number of SDN entries loaded in memory")
     public int count() {
         return sdnScreeningService.getEntryCount();
     }

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { toast } from 'react-hot-toast'
 import { createRule, deleteRule, getRules, updateRule } from '../api/rules'
-import type { MonitoringRuleRequest, MonitoringRuleResponse, RuleType, Severity } from '../api/types'
+import type { MonitoringRuleRequest, MonitoringRuleResponse, PagedResponse, RuleType, Severity } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
+import { PaginationControls } from '../components/PaginationControls'
 import { StatusBadge } from '../components/StatusBadge'
-import { filterItemsByText, getPageCount, paginateItems } from '../utils/tableState'
 
 const ruleTypes: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
 const severities: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
@@ -25,39 +25,82 @@ export function RulesPage() {
   const [rules, setRules] = useState<MonitoringRuleResponse[]>([])
   const [form, setForm] = useState<MonitoringRuleRequest>(initialForm)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+
   const [search, setSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(8)
+  const [totalRules, setTotalRules] = useState(0)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const pageSize = 8
 
-  const loadRules = async () => {
+  const loadRules = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getRules()
-      setRules(result)
+      const rawResult = await getRules({
+        search: appliedSearch,
+        page: page - 1,
+        size: pageSize,
+      })
+
+      const result: PagedResponse<MonitoringRuleResponse> = Array.isArray(rawResult)
+        ? (() => {
+          const normalizedSearch = appliedSearch.trim().toLowerCase()
+          const filtered = normalizedSearch
+            ? rawResult.filter((rule) => {
+              const matchesText = [
+                rule.name,
+                rule.type,
+                rule.severity,
+                String(rule.id),
+              ].some((value) => value.toLowerCase().includes(normalizedSearch))
+              const matchesActive = 'active'.includes(normalizedSearch) && rule.active
+              const matchesInactive = 'inactive'.includes(normalizedSearch) && !rule.active
+              return matchesText || matchesActive || matchesInactive
+            })
+            : rawResult
+
+          const safePage = Math.max(page - 1, 0)
+          const start = safePage * pageSize
+          const end = start + pageSize
+          const totalElements = filtered.length
+          const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / pageSize)
+          return {
+            items: filtered.slice(start, end),
+            page: safePage,
+            size: pageSize,
+            totalElements,
+            totalPages,
+          }
+        })()
+        : rawResult
+
+      setRules(result.items)
+      setTotalRules(result.totalElements)
+
+      if (result.totalElements > 0 && result.items.length === 0 && page > 1) {
+        setPage(Math.max(1, result.totalPages))
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load rules')
+      setRules([])
+      setTotalRules(0)
     } finally {
       setLoading(false)
     }
-  }
+  }, [appliedSearch, page, pageSize])
 
   useEffect(() => {
     void loadRules()
-  }, [])
+  }, [loadRules])
 
-  const filteredRules = useMemo(() => {
-    return filterItemsByText(rules, search, (rule) => [rule.name, rule.type, rule.severity, rule.active ? 'active' : 'inactive'])
-  }, [rules, search])
-
-  const pageCount = useMemo(() => getPageCount(filteredRules.length, pageSize), [filteredRules.length])
-  const visibleRules = useMemo(() => paginateItems(filteredRules, page, pageSize), [filteredRules, page])
-
-  useEffect(() => {
-    setPage(1)
-  }, [search])
+  const pageCount = useMemo(
+    () => Math.max(1, Math.ceil(totalRules / Math.max(1, pageSize))),
+    [pageSize, totalRules],
+  )
 
   const payload = useMemo(() => {
     const basePayload: MonitoringRuleRequest = {
@@ -98,7 +141,8 @@ export function RulesPage() {
       }
       setForm(initialForm)
       setEditingRuleId(null)
-      await loadRules()
+      setPage(1)
+      void loadRules()
       toast.success(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to save rule')
@@ -125,7 +169,11 @@ export function RulesPage() {
     }
     try {
       await deleteRule(id)
-      await loadRules()
+      if (page > 1 && rules.length === 1) {
+        setPage((prev) => Math.max(1, prev - 1))
+      } else {
+        void loadRules()
+      }
       toast.success('Rule deleted')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to delete rule')
@@ -254,15 +302,40 @@ export function RulesPage() {
       </section>
 
       <section className="panel">
-        <h3>Configured Rules ({filteredRules.length})</h3>
-        <label className="span-2">
-          Search
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by name, type, or severity"
-          />
-        </label>
+        <h3>Configured Rules ({totalRules})</h3>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            setAppliedSearch(search)
+            setPage(1)
+          }}
+        >
+          <label className="span-2">
+            Search
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by name, type, severity, or active state"
+            />
+          </label>
+          <div className="button-row span-2" style={{ marginTop: 8 }}>
+            <button type="submit" disabled={loading}>
+              {loading ? 'Searching...' : 'Apply Search'}
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => {
+                setSearch('')
+                setAppliedSearch('')
+                setPage(1)
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        </form>
+
         {loading ? <p>Loading rules...</p> : null}
         <div className="table-wrap">
           <table>
@@ -277,7 +350,7 @@ export function RulesPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleRules.map((rule) => (
+              {rules.map((rule) => (
                 <tr key={rule.id}>
                   <td>#{rule.id}</td>
                   <td>{rule.name}</td>
@@ -298,10 +371,10 @@ export function RulesPage() {
                   </td>
                 </tr>
               ))}
-              {!visibleRules.length ? (
+              {!rules.length ? (
                 <tr>
                   <td className="empty-row" colSpan={6}>
-                    No rules configured.
+                    No rules found.
                   </td>
                 </tr>
               ) : null}
@@ -310,17 +383,19 @@ export function RulesPage() {
         </div>
       </section>
 
-      {filteredRules.length > pageSize ? (
-        <div className="button-row">
-          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-            Previous
-          </button>
-          <span>Page {page} of {pageCount}</span>
-          <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>
-            Next
-          </button>
-        </div>
-      ) : null}
+      <PaginationControls
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalRules}
+        totalPages={pageCount}
+        rowsPerPageOptions={[5, 8, 10, 25]}
+        onPageChange={setPage}
+        onRowsPerPageChange={(nextPageSize) => {
+          setPageSize(nextPageSize)
+          setPage(1)
+        }}
+        loading={loading}
+      />
     </div>
   )
 }

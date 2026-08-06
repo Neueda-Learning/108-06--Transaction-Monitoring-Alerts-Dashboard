@@ -7,7 +7,8 @@ import {
   Bell,
   Bot,
   Clock3,
-  FileCode2,
+  Copy,
+  Download,
   LayoutDashboard,
   Moon,
   PlaySquare,
@@ -31,22 +32,28 @@ import {
 } from 'recharts'
 import { toast } from 'react-hot-toast'
 import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
-import { apiRequest } from './api/client'
+import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
+import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
+import { PaginationControls } from './components/PaginationControls'
 import type {
+  AiDashboardSummaryResponse,
   AiInvestigationResponse,
   AlertResponse,
   AlertStatus,
   MonitoringRuleRequest,
   MonitoringRuleResponse,
+  PagedResponse,
   RuleType,
   Severity,
   SimulationResult,
   TransactionResponse,
+  TransactionStatus,
 } from './api/types'
+import type { InvestigationNote } from './models/alertModels'
 import { formatCurrency, formatDate, riskBucket } from './utils/format'
 
 type TabType =
@@ -55,7 +62,6 @@ type TabType =
   | 'alerts'
   | 'rules'
   | 'simulator'
-  | 'apidocs'
 
 const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -63,27 +69,11 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
   { id: 'alerts', label: 'Alerts', icon: ShieldAlert },
   { id: 'rules', label: 'Monitoring Rules', icon: SlidersHorizontal },
   { id: 'simulator', label: 'Simulator', icon: PlaySquare },
-  { id: 'apidocs', label: 'API Docs', icon: FileCode2 },
 ]
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
 const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
-
-const API_DOCS = [
-  { method: 'GET', path: '/api/transactions' },
-  { method: 'POST', path: '/api/transactions' },
-  { method: 'GET', path: '/api/alerts' },
-  { method: 'GET', path: '/api/alerts/{id}' },
-  { method: 'PATCH', path: '/api/alerts/{id}/status' },
-  { method: 'GET', path: '/api/rules' },
-  { method: 'GET', path: '/api/rules/{id}' },
-  { method: 'POST', path: '/api/rules' },
-  { method: 'PUT', path: '/api/rules/{id}' },
-  { method: 'DELETE', path: '/api/rules/{id}' },
-  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
-  { method: 'GET', path: '/api/sdn/count' },
-]
 
 const TX_CREATE_PLACEHOLDERS = {
   accountId: 'ACC-001',
@@ -98,6 +88,15 @@ const DEFAULT_TX_FILTERS = {
   minAmount: '',
   maxAmount: '',
   sortBy: 'TIME_DESC' as const,
+}
+
+type DashboardSummary = AiDashboardSummaryResponse
+
+type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
+type AlertSortDirection = 'desc' | 'asc'
+type TransactionLedgerEntry = TransactionResponse & {
+  derivedStatus: TransactionStatus
+  linkedAlerts: AlertResponse[]
 }
 
 function getAlertCreatedToastMessage(count: number) {
@@ -116,25 +115,44 @@ function App() {
 
   const [alertFilterStatus, setAlertFilterStatus] = useState<AlertStatus | ''>('')
   const [alertFilterSeverity, setAlertFilterSeverity] = useState<Severity | ''>('')
+  const [alertFilterRuleType, setAlertFilterRuleType] = useState<RuleType | ''>('')
+  const [alertFilterStatusDraft, setAlertFilterStatusDraft] = useState<AlertStatus | ''>('')
+  const [alertFilterSeverityDraft, setAlertFilterSeverityDraft] = useState<Severity | ''>('')
+  const [alertFilterRuleTypeDraft, setAlertFilterRuleTypeDraft] = useState<RuleType | ''>('')
+  const [alertSearchAlertIdDraft, setAlertSearchAlertIdDraft] = useState('')
+  const [alertSearchTransactionIdDraft, setAlertSearchTransactionIdDraft] = useState('')
+  const [alertSearchAccountIdDraft, setAlertSearchAccountIdDraft] = useState('')
+  const [appliedAlertSearchAlertId, setAppliedAlertSearchAlertId] = useState('')
+  const [appliedAlertSearchTransactionId, setAppliedAlertSearchTransactionId] = useState('')
+  const [appliedAlertSearchAccountId, setAppliedAlertSearchAccountId] = useState('')
+  const [alertSortColumn, setAlertSortColumn] = useState<AlertSortColumn>('createdAt')
+  const [alertSortDirection, setAlertSortDirection] = useState<AlertSortDirection>('desc')
+  const [alertPage, setAlertPage] = useState(1)
+  const [alertPageSize, setAlertPageSize] = useState(8)
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
-  const [alertNote, setAlertNote] = useState('')
-  const [nextStatus, setNextStatus] = useState<AlertStatus>('ACKNOWLEDGED')
-  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, string[]>>({})
+  const [openInvestigation, setOpenInvestigation] = useState(false)
+  const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
+  const [pendingAlertStatus, setPendingAlertStatus] = useState<AlertStatus | null>(null)
   const [aiResult, setAiResult] = useState<AiInvestigationResponse | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
 
   const [txSearch, setTxSearch] = useState(DEFAULT_TX_FILTERS.search)
-  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [txStatusFilter, setTxStatusFilter] = useState<'ALL' | 'APPROVED' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
   const [txMinAmount, setTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
   const [txMaxAmount, setTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [txSortBy, setTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
 
   const [appliedTxSearch, setAppliedTxSearch] = useState(DEFAULT_TX_FILTERS.search)
-  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'CLEAN' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
+  const [appliedTxStatusFilter, setAppliedTxStatusFilter] = useState<'ALL' | 'APPROVED' | 'FLAGGED' | 'BLOCKED'>(DEFAULT_TX_FILTERS.status)
   const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
   const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
+  const [ledgerTransactions, setLedgerTransactions] = useState<TransactionResponse[]>([])
+  const [txPage, setTxPage] = useState(1)
+  const [txPageSize, setTxPageSize] = useState(8)
+  const [txTotalTransactions, setTxTotalTransactions] = useState(0)
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
   const [createdTxId, setCreatedTxId] = useState<number | null>(null)
   const ledgerTableWrapRef = useRef<HTMLDivElement | null>(null)
@@ -156,13 +174,14 @@ function App() {
     description: '',
   })
 
-  const [apiEndpoint, setApiEndpoint] = useState(API_DOCS[0].path)
-  const [apiMethod, setApiMethod] = useState(API_DOCS[0].method)
-  const [apiBody, setApiBody] = useState('{\n  "accountId": "ACC-001",\n  "payeeId": "PAYEE-009",\n  "amount": 500,\n  "currency": "GBP"\n}')
-  const [apiResponse, setApiResponse] = useState('')
-
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
+  const simulatorResultRef = useRef<HTMLElement | null>(null)
+
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null)
+  const [showDashboardSummary, setShowDashboardSummary] = useState(false)
+  const [dashboardSummaryLoading, setDashboardSummaryLoading] = useState(false)
+  const [dashboardSummaryError, setDashboardSummaryError] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -207,6 +226,84 @@ function App() {
     return map
   }, [alerts])
 
+  const loadTransactionLedger = useCallback(async () => {
+    setTransactionsLoading(true)
+    setError(null)
+    try {
+      const rawResult = await getTransactions({
+        search: appliedTxSearch,
+        status: appliedTxStatusFilter === 'ALL' ? '' : appliedTxStatusFilter,
+        minAmount: appliedTxMinAmount,
+        maxAmount: appliedTxMaxAmount,
+        sortBy: appliedTxSortBy,
+        page: txPage - 1,
+        size: txPageSize,
+      })
+
+      const result: PagedResponse<TransactionResponse> = Array.isArray(rawResult)
+        ? (() => {
+          const normalizedSearch = appliedTxSearch.trim().toLowerCase()
+          const filtered = rawResult
+            .filter((entry) => {
+              const searchMatch =
+                normalizedSearch.length === 0 ||
+                `${entry.id}`.includes(normalizedSearch) ||
+                entry.accountId.toLowerCase().includes(normalizedSearch) ||
+                entry.payeeId.toLowerCase().includes(normalizedSearch)
+              const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.status === appliedTxStatusFilter
+              const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
+              const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
+              return searchMatch && statusMatch && minMatch && maxMatch
+            })
+            .sort((left, right) => {
+              if (appliedTxSortBy === 'AMOUNT_ASC') {
+                return Number(left.amount) - Number(right.amount)
+              }
+              if (appliedTxSortBy === 'AMOUNT_DESC') {
+                return Number(right.amount) - Number(left.amount)
+              }
+              return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
+            })
+
+          const safePage = Math.max(txPage - 1, 0)
+          const start = safePage * txPageSize
+          const end = start + txPageSize
+          const totalElements = filtered.length
+          const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / txPageSize)
+
+          return {
+            items: filtered.slice(start, end),
+            page: safePage,
+            size: txPageSize,
+            totalElements,
+            totalPages,
+          }
+        })()
+        : rawResult
+
+      setLedgerTransactions(result.items)
+      setTxTotalTransactions(result.totalElements)
+
+      if (result.totalElements > 0 && result.items.length === 0 && txPage > 1) {
+        setTxPage(Math.max(1, result.totalPages))
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load transactions from backend')
+      setLedgerTransactions([])
+      setTxTotalTransactions(0)
+    } finally {
+      setTransactionsLoading(false)
+    }
+  }, [appliedTxMaxAmount, appliedTxMinAmount, appliedTxSearch, appliedTxSortBy, appliedTxStatusFilter, txPage, txPageSize])
+
+  useEffect(() => {
+    if (activeTab !== 'transactions') {
+      return
+    }
+
+    void loadTransactionLedger()
+  }, [activeTab, loadTransactionLedger])
+
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter((entry) => !['CLOSED', 'DISMISSED'].includes(entry.status)).length
     const highSeverity = alerts.filter((entry) => entry.severity === 'HIGH').length
@@ -244,14 +341,86 @@ function App() {
     return alerts.filter((entry) => {
       const statusMatch = alertFilterStatus ? entry.status === alertFilterStatus : true
       const severityMatch = alertFilterSeverity ? entry.severity === alertFilterSeverity : true
-      return statusMatch && severityMatch
+      const ruleTypeMatch = alertFilterRuleType ? entry.ruleType === alertFilterRuleType : true
+      const alertIdMatch = appliedAlertSearchAlertId
+        ? `${entry.id}`.toLowerCase().includes(appliedAlertSearchAlertId.trim().toLowerCase())
+        : true
+      const transactionIdMatch = appliedAlertSearchTransactionId
+        ? `${entry.transactionId}`.toLowerCase().includes(appliedAlertSearchTransactionId.trim().toLowerCase())
+        : true
+      const accountIdMatch = appliedAlertSearchAccountId
+        ? entry.accountId.toLowerCase().includes(appliedAlertSearchAccountId.trim().toLowerCase())
+        : true
+      return statusMatch && severityMatch && ruleTypeMatch && alertIdMatch && transactionIdMatch && accountIdMatch
     })
-  }, [alertFilterSeverity, alertFilterStatus, alerts])
+  }, [
+    alertFilterSeverity,
+    alertFilterStatus,
+    alertFilterRuleType,
+    alerts,
+    appliedAlertSearchAlertId,
+    appliedAlertSearchTransactionId,
+    appliedAlertSearchAccountId,
+  ])
+
+  const sortedAlerts = useMemo(() => {
+    const severityRank: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 }
+    return [...filteredAlerts].sort((left, right) => {
+      let compareValue: number
+
+      if (alertSortColumn === 'id') {
+        compareValue = left.id - right.id
+      } else if (alertSortColumn === 'transactionId') {
+        compareValue = left.transactionId - right.transactionId
+      } else if (alertSortColumn === 'accountId') {
+        compareValue = left.accountId.localeCompare(right.accountId)
+      } else if (alertSortColumn === 'severity') {
+        compareValue = severityRank[left.severity] - severityRank[right.severity]
+      } else if (alertSortColumn === 'status') {
+        compareValue = left.status.localeCompare(right.status)
+      } else {
+        compareValue = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+      }
+
+      return alertSortDirection === 'desc' ? -compareValue : compareValue
+    })
+  }, [alertSortColumn, alertSortDirection, filteredAlerts])
+
+  const alertTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(sortedAlerts.length / Math.max(1, alertPageSize))),
+    [alertPageSize, sortedAlerts.length],
+  )
+
+  const pagedAlerts = useMemo(() => {
+    const safePage = Math.min(Math.max(1, alertPage), alertTotalPages)
+    const start = (safePage - 1) * alertPageSize
+    const end = start + alertPageSize
+    return sortedAlerts.slice(start, end)
+  }, [alertPage, alertPageSize, alertTotalPages, sortedAlerts])
+
+  useEffect(() => {
+    if (alertPage > alertTotalPages) {
+      setAlertPage(alertTotalPages)
+    }
+  }, [alertPage, alertTotalPages])
 
   const selectedAlert = useMemo(
     () => alerts.find((entry) => entry.id === selectedAlertId) ?? null,
     [alerts, selectedAlertId],
   )
+
+  const selectedAlertForDialog = useMemo(() => {
+    if (!selectedAlert) {
+      return null
+    }
+    if (!pendingAlertStatus || pendingAlertStatus === selectedAlert.status) {
+      return selectedAlert
+    }
+    return {
+      ...selectedAlert,
+      status: pendingAlertStatus,
+    }
+  }, [pendingAlertStatus, selectedAlert])
 
   const chartData = useMemo(() => {
     const txBuckets = Array.from({ length: 8 }, (_, index) => ({ label: `${index * 3}h`, count: 0 }))
@@ -318,55 +487,167 @@ function App() {
     [alerts],
   )
 
-  const derivedTransactions = useMemo(() => {
-    const sortedTransactions = transactions
-      .map((entry) => {
-        const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
-        let status: 'CLEAN' | 'FLAGGED' | 'BLOCKED' = 'CLEAN'
-        if (linkedAlerts.length > 0) {
-          const hasHighActive = linkedAlerts.some(
-            (alert) => alert.severity === 'HIGH' && !['CLOSED', 'DISMISSED'].includes(alert.status),
-          )
-          status = hasHighActive ? 'BLOCKED' : 'FLAGGED'
-        }
-        return { ...entry, derivedStatus: status, linkedAlerts }
-      })
-      .filter((entry) => {
-        const searchValue = appliedTxSearch.trim().toLowerCase()
-        const searchMatch =
-          searchValue.length === 0 ||
-          `${entry.id}`.includes(searchValue) ||
-          entry.accountId.toLowerCase().includes(searchValue) ||
-          entry.payeeId.toLowerCase().includes(searchValue)
-        const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.derivedStatus === appliedTxStatusFilter
-        const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
-        const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
-        return searchMatch && statusMatch && minMatch && maxMatch
-      })
-      .sort((left, right) => {
-        if (appliedTxSortBy === 'AMOUNT_ASC') {
-          return Number(left.amount) - Number(right.amount)
-        }
-        if (appliedTxSortBy === 'AMOUNT_DESC') {
-          return Number(right.amount) - Number(left.amount)
-        }
-        return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
-      })
+  const buildDashboardSummaryText = useCallback((summary: DashboardSummary) => {
+    return [
+      summary.narrative,
+      '',
+      'Key Insights:',
+      ...summary.insights.map((entry) => `- ${entry}`),
+      '',
+      'Recommended Action Steps:',
+      ...summary.actionSteps.map((step) => `[${step.priority}] ${step.title}`),
+    ].join('\n')
+  }, [])
 
-    if (createdTxId === null) {
-      return sortedTransactions
+  const buildLocalDashboardSummary = useCallback((): DashboardSummary => {
+    const openAlerts = alerts.filter((entry) => entry.status !== 'CLOSED' && entry.status !== 'DISMISSED')
+    const criticalOpen = openAlerts.filter((entry) => entry.severity === 'CRITICAL')
+    const highOpen = openAlerts.filter((entry) => entry.severity === 'HIGH')
+    const mediumOpen = openAlerts.filter((entry) => entry.severity === 'MEDIUM')
+    const flaggedOrBlocked = transactions.filter((entry) => entry.status === 'FLAGGED' || entry.status === 'BLOCKED')
+    const flaggedRate = transactions.length ? Math.round((flaggedOrBlocked.length / transactions.length) * 100) : 0
+    const activeRules = rules.filter((rule) => rule.active).length
+
+    const narrative = `Across ${transactions.length} monitored transactions, ${flaggedOrBlocked.length} (${flaggedRate}%) were flagged or blocked. There are currently ${openAlerts.length} open alerts (${criticalOpen.length} critical, ${highOpen.length} high, ${mediumOpen.length} medium) tracked against ${activeRules} active monitoring rules.`
+
+    const insights = [
+      `${transactions.length} total transactions, ${flaggedOrBlocked.length} flagged or blocked (${flaggedRate}%).`,
+      `${openAlerts.length} open alerts awaiting resolution.`,
+      `${criticalOpen.length} critical-severity alerts require immediate attention.`,
+      `${activeRules} of ${rules.length} monitoring rules are currently active.`,
+    ]
+
+    const actionSteps: DashboardSummary['actionSteps'] = []
+    if (criticalOpen.length) {
+      actionSteps.push({
+        priority: 'CRITICAL',
+        title: `Resolve ${criticalOpen.length} critical alert${criticalOpen.length === 1 ? '' : 's'}`,
+        details: criticalOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
+    }
+    if (highOpen.length) {
+      actionSteps.push({
+        priority: 'HIGH',
+        title: `Review ${highOpen.length} high-severity alert${highOpen.length === 1 ? '' : 's'}`,
+        details: highOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
+    }
+    if (mediumOpen.length) {
+      actionSteps.push({
+        priority: 'MEDIUM',
+        title: `Triage ${mediumOpen.length} medium-severity alert${mediumOpen.length === 1 ? '' : 's'}`,
+        details: mediumOpen.slice(0, 5).map((entry) => `Alert #${entry.id}: ${entry.ruleName} on account ${entry.accountId}`),
+      })
     }
 
-    const createdTransactionIndex = sortedTransactions.findIndex((entry) => entry.id === createdTxId)
+    return {
+      generatedAt: new Date().toLocaleString(),
+      narrative,
+      insights,
+      actionSteps,
+      model: 'local-heuristic',
+    }
+  }, [alerts, transactions, rules])
 
-    if (createdTransactionIndex <= 0) {
-      return sortedTransactions
+  const generateDashboardSummary = useCallback(async () => {
+    setDashboardSummaryLoading(true)
+    setDashboardSummaryError(null)
+    try {
+      const result = await generateAiDashboardSummary()
+      setDashboardSummary(result)
+    } catch (summaryRequestError) {
+      const message = summaryRequestError instanceof Error ? summaryRequestError.message : 'AI summary generation failed'
+      setDashboardSummaryError(`${message} - showing a locally computed summary instead.`)
+      setDashboardSummary(buildLocalDashboardSummary())
+    } finally {
+      setDashboardSummaryLoading(false)
+      setShowDashboardSummary(true)
+    }
+  }, [buildLocalDashboardSummary])
+
+  const copyDashboardSummary = useCallback(async () => {
+    if (!dashboardSummary) {
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(buildDashboardSummaryText(dashboardSummary))
+      showSuccessToast('Summary copied to clipboard')
+    } catch {
+      toast.error('Failed to copy summary')
+    }
+  }, [buildDashboardSummaryText, dashboardSummary, showSuccessToast])
+
+  const downloadDashboardSummary = useCallback(() => {
+    if (!dashboardSummary) {
+      return
+    }
+    const blob = new Blob([buildDashboardSummaryText(dashboardSummary)], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `dashboard-summary-${Date.now()}.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [buildDashboardSummaryText, dashboardSummary])
+
+  const applyAlertFilters = useCallback(() => {
+    setAlertFilterStatus(alertFilterStatusDraft)
+    setAlertFilterSeverity(alertFilterSeverityDraft)
+    setAlertFilterRuleType(alertFilterRuleTypeDraft)
+    setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
+    setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
+    setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
+    setAlertPage(1)
+  }, [
+    alertFilterStatusDraft,
+    alertFilterSeverityDraft,
+    alertFilterRuleTypeDraft,
+    alertSearchAlertIdDraft,
+    alertSearchTransactionIdDraft,
+    alertSearchAccountIdDraft,
+  ])
+
+  const resetAlertFilters = useCallback(() => {
+    setAlertFilterStatus('')
+    setAlertFilterSeverity('')
+    setAlertFilterRuleType('')
+    setAlertFilterStatusDraft('')
+    setAlertFilterSeverityDraft('')
+    setAlertFilterRuleTypeDraft('')
+    setAlertSearchAlertIdDraft('')
+    setAlertSearchTransactionIdDraft('')
+    setAlertSearchAccountIdDraft('')
+    setAppliedAlertSearchAlertId('')
+    setAppliedAlertSearchTransactionId('')
+    setAppliedAlertSearchAccountId('')
+    setAlertPage(1)
+  }, [])
+
+  const toggleAlertSort = useCallback((column: AlertSortColumn) => {
+    if (alertSortColumn === column) {
+      setAlertSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'))
+      return
     }
 
-    const createdTransaction = sortedTransactions[createdTransactionIndex]
-    const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
-    return [createdTransaction, ...withoutCreatedTransaction]
-  }, [alertsByTransaction, createdTxId, transactions, appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
+    setAlertSortColumn(column)
+    setAlertSortDirection('asc')
+  }, [alertSortColumn])
+
+  const derivedTransactions = useMemo<TransactionLedgerEntry[]>(() => {
+    return ledgerTransactions.map((entry) => {
+      const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
+      return {
+        ...entry,
+        derivedStatus: entry.status ?? 'APPROVED',
+        linkedAlerts,
+      }
+    })
+  }, [alertsByTransaction, ledgerTransactions])
+
+  const txTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(txTotalTransactions / Math.max(1, txPageSize))),
+    [txPageSize, txTotalTransactions],
+  )
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -388,20 +669,38 @@ function App() {
   }, [appliedTxSearch, appliedTxStatusFilter, appliedTxMinAmount, appliedTxMaxAmount, appliedTxSortBy])
 
   useEffect(() => {
-    setAiResult(null)
-    setAiError(null)
-    setAiLoading(false)
-  }, [selectedAlertId])
+    if (activeTab !== 'simulator' || simulatorResult === null) {
+      return
+    }
 
-  const applyTransactionFilters = () => {
+    simulatorResultRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    })
+  }, [activeTab, simulatorResult])
+
+  const selectedTx = useMemo(
+    () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
+    [derivedTransactions, selectedTxId],
+  )
+
+  const handleRefresh = useCallback(() => {
+    void loadAll()
+    if (activeTab === 'transactions') {
+      void loadTransactionLedger()
+    }
+  }, [activeTab, loadAll, loadTransactionLedger])
+
+  const applyTransactionFilters = useCallback(() => {
     setAppliedTxSearch(txSearch)
     setAppliedTxStatusFilter(txStatusFilter)
     setAppliedTxMinAmount(txMinAmount)
     setAppliedTxMaxAmount(txMaxAmount)
     setAppliedTxSortBy(txSortBy)
-  }
+    setTxPage(1)
+  }, [txMaxAmount, txMinAmount, txSearch, txSortBy, txStatusFilter])
 
-  const resetTransactionFilters = () => {
+  const resetTransactionFilters = useCallback(() => {
     setTxSearch(DEFAULT_TX_FILTERS.search)
     setTxStatusFilter(DEFAULT_TX_FILTERS.status)
     setTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
@@ -412,12 +711,9 @@ function App() {
     setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
     setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
     setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
-  }
-
-  const selectedTx = useMemo(
-    () => derivedTransactions.find((entry) => entry.id === selectedTxId) ?? null,
-    [derivedTransactions, selectedTxId],
-  )
+    setTxPage(1)
+    setCreatedTxId(null)
+  }, [])
 
   const saveTransaction = async (event: FormEvent) => {
     event.preventDefault()
@@ -431,8 +727,9 @@ function App() {
         description: transactionForm.description || null,
       })
 
-      setTransactions((prev) => [createdTransaction, ...prev.filter((entry) => entry.id !== createdTransaction.id)])
       setCreatedTxId(createdTransaction.id)
+      const shouldReloadLedgerImmediately = txPage === 1
+      setTxPage(1)
 
       setTransactionForm({
         accountId: '',
@@ -442,33 +739,75 @@ function App() {
         description: '',
       })
 
-      // Keep dashboard metrics consistent while the new row is shown immediately in the ledger.
       void loadAll()
+      if (shouldReloadLedgerImmediately) {
+        void loadTransactionLedger()
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create transaction')
     }
   }
 
-  const moveAlertStatus = async (event: FormEvent) => {
-    event.preventDefault()
+  const openInvestigateDialog = useCallback((alertId: number) => {
+    setSelectedAlertId(alertId)
+    setPendingAlertStatus(null)
+    setAiResult(null)
+    setAiError(null)
+    setOpenInvestigation(true)
+  }, [])
+
+  const closeInvestigateDialog = useCallback(() => {
+    setOpenInvestigation(false)
+    setSelectedAlertId(null)
+    setPendingAlertStatus(null)
+    setAiResult(null)
+    setAiError(null)
+  }, [])
+
+  const handleWorkflowStatusChange = useCallback((status: AlertStatus) => {
+    setPendingAlertStatus(status)
+  }, [])
+
+  const postInvestigationNote = useCallback(async (content: string) => {
+    if (!selectedAlert) {
+      return
+    }
+    const nextNote: InvestigationNote = {
+      id: Date.now(),
+      alertId: selectedAlert.id,
+      operatorName: 'Current User',
+      content,
+      createdAt: new Date().toISOString(),
+    }
+    setNotesByAlertId((prev) => ({
+      ...prev,
+      [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), nextNote],
+    }))
+  }, [selectedAlert])
+
+  const saveInvestigation = useCallback(async () => {
     if (!selectedAlert) {
       return
     }
     setError(null)
     try {
-      await updateAlertStatus(selectedAlert.id, { status: nextStatus, note: alertNote })
-      if (alertNote.trim()) {
-        setNotesByAlertId((prev) => ({
-          ...prev,
-          [selectedAlert.id]: [...(prev[selectedAlert.id] ?? []), alertNote.trim()],
-        }))
+      const statusToPersist = pendingAlertStatus ?? selectedAlert.status
+
+      if (statusToPersist !== selectedAlert.status) {
+        await updateAlertStatus(selectedAlert.id, { status: statusToPersist })
+        const statusLabel = statusToPersist.charAt(0) + statusToPersist.slice(1).toLowerCase()
+        showSuccessToast(`Alert status updated to ${statusLabel}`)
+      } else {
+        showSuccessToast('Investigation saved')
       }
-      setAlertNote('')
+
       await loadAll()
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Failed to update alert')
+      setPendingAlertStatus(null)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to save investigation')
+      throw saveError
     }
-  }
+  }, [loadAll, pendingAlertStatus, selectedAlert, showSuccessToast])
 
   const onInvestigateWithAi = async () => {
     if (!selectedAlert) {
@@ -565,20 +904,6 @@ function App() {
     await loadAll()
   }
 
-  const runApiRequest = async () => {
-    setApiResponse('Running request...')
-    try {
-      const payload = apiMethod === 'GET' || apiMethod === 'DELETE' ? undefined : JSON.parse(apiBody)
-      const result = await apiRequest<unknown>(apiEndpoint, {
-        method: apiMethod,
-        body: payload ? JSON.stringify(payload) : undefined,
-      })
-      setApiResponse(JSON.stringify(result, null, 2))
-    } catch (requestError) {
-      setApiResponse(requestError instanceof Error ? requestError.message : 'Request failed')
-    }
-  }
-
   const pageTitle = TABS.find((entry) => entry.id === activeTab)?.label ?? 'Dashboard'
 
   return (
@@ -628,7 +953,7 @@ function App() {
             <button className="ghost icon-btn" type="button" onClick={() => setDarkMode((prev) => !prev)}>
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <button className="primary icon-btn" type="button" onClick={() => void loadAll()}>
+            <button className="primary icon-btn" type="button" onClick={handleRefresh}>
               <Bell size={14} />
             </button>
             <div className="avatar-chip">
@@ -719,10 +1044,10 @@ function App() {
                 <h3>Alerts by Rule Type</h3>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 30 }}>
+                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 56, right: 12 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} />
-                      <YAxis dataKey="label" type="category" width={120} />
+                      <YAxis dataKey="label" type="category" width={156} />
                       <Tooltip />
                       <Bar dataKey="count" fill="#7c3aed" radius={[0, 6, 6, 0]} />
                     </BarChart>
@@ -748,8 +1073,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeWorkloadAlerts.map((entry) => (
-                      <tr key={entry.id}>
+                    {activeWorkloadAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
                         <td className="mono">#{entry.id}</td>
                         <td>
                           <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
@@ -765,8 +1090,8 @@ function App() {
                             type="button"
                             className="ghost"
                             onClick={() => {
-                              setSelectedAlertId(entry.id)
                               setActiveTab('alerts')
+                              openInvestigateDialog(entry.id)
                             }}
                           >
                             Investigate
@@ -784,6 +1109,71 @@ function App() {
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section className="card dashboard-summary">
+              <div className="dashboard-summary-header">
+                <div>
+                  <h3>AI Dashboard Summary</h3>
+                  <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
+                </div>
+                <div className="dashboard-summary-actions">
+                  <button
+                    className="primary dashboard-summary-btn"
+                    type="button"
+                    onClick={() => void generateDashboardSummary()}
+                    disabled={dashboardSummaryLoading}
+                  >
+                    <Bot size={15} />
+                    {dashboardSummaryLoading ? 'Generating...' : dashboardSummary ? 'Refresh Summary' : 'Generate Summary'}
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={() => void copyDashboardSummary()} disabled={!dashboardSummary}>
+                    <Copy size={15} />
+                    Copy
+                  </button>
+                  <button className="ghost dashboard-summary-btn" type="button" onClick={downloadDashboardSummary} disabled={!dashboardSummary}>
+                    <Download size={15} />
+                    Download
+                  </button>
+                </div>
+              </div>
+
+              {dashboardSummaryError ? <p className="error-text">{dashboardSummaryError}</p> : null}
+
+              {showDashboardSummary && dashboardSummary ? (
+                <div className="dashboard-summary-body">
+                  <p className="muted">
+                    Generated: {dashboardSummary.generatedAt}
+                  </p>
+                  <p>{dashboardSummary.narrative}</p>
+                  <h4>Key Insights</h4>
+                  <ul className="dashboard-summary-list">
+                    {dashboardSummary.insights.map((insight) => (
+                      <li key={insight}>{insight}</li>
+                    ))}
+                  </ul>
+
+
+                  <h4 style={{ marginTop: '16px' }}>Recommended Action Steps</h4>
+                  <div className="action-steps">
+                    {dashboardSummary.actionSteps.map((step, index) => (
+                      <div key={index} className={`action-step action-step-${step.priority.toLowerCase()}`}>
+                        <div className="action-step-header">
+                          <span className={`action-priority-badge badge sev-${step.priority === 'CRITICAL' ? 'critical' : step.priority === 'HIGH' ? 'high' : 'medium'}`}>
+                            {step.priority}
+                          </span>
+                          <h5>{step.title}</h5>
+                        </div>
+                        <ol className="action-step-details">
+                          {step.details.map((detail) => (
+                            <li key={detail}>{detail}</li>
+                          ))}
+                        </ol>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </section>
           </div>
         ) : null}
@@ -855,13 +1245,17 @@ function App() {
               </div>
               <select value={txStatusFilter} onChange={(event) => setTxStatusFilter(event.target.value as typeof txStatusFilter)}>
                 <option value="ALL">All Status</option>
-                <option value="CLEAN">CLEAN</option>
+                <option value="APPROVED">APPROVED</option>
                 <option value="FLAGGED">FLAGGED</option>
                 <option value="BLOCKED">BLOCKED</option>
               </select>
               <input placeholder="Min Amount" value={txMinAmount} onChange={(event) => setTxMinAmount(event.target.value)} />
               <input placeholder="Max Amount" value={txMaxAmount} onChange={(event) => setTxMaxAmount(event.target.value)} />
-              <select value={txSortBy} onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}>
+              <select
+                className="tx-sort-select"
+                value={txSortBy}
+                onChange={(event) => setTxSortBy(event.target.value as typeof txSortBy)}
+              >
                 <option value="TIME_DESC">Newest</option>
                 <option value="AMOUNT_DESC">Amount High-Low</option>
                 <option value="AMOUNT_ASC">Amount Low-High</option>
@@ -877,7 +1271,8 @@ function App() {
             </section>
 
             <section className="card">
-              <h3>Transactions Ledger ({derivedTransactions.length})</h3>
+              <h3>Transactions Ledger ({txTotalTransactions})</h3>
+              {transactionsLoading ? <p className="muted table-caption">Loading transactions...</p> : null}
               <div ref={ledgerTableWrapRef} className="table-wrap">
                 <table>
                   <thead>
@@ -908,7 +1303,7 @@ function App() {
                           <span className={`badge sev-${riskBucket(entry.riskScore)}`}>{entry.riskScore}</span>
                         </td>
                         <td>
-                          <span className={`badge tx-${entry.derivedStatus.toLowerCase()}`}>{entry.derivedStatus}</span>
+                          <span className={`badge tx-${(entry.derivedStatus ?? 'approved').toLowerCase()}`}>{entry.derivedStatus}</span>
                         </td>
                         <td>
                           <button type="button" className="ghost" onClick={() => setSelectedTxId(entry.id)}>
@@ -917,9 +1312,30 @@ function App() {
                         </td>
                       </tr>
                     ))}
+                    {!derivedTransactions.length ? (
+                      <tr>
+                        <td className="empty-row" colSpan={8}>
+                          No transactions matched the selected filters.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
+
+              <PaginationControls
+                page={txPage}
+                pageSize={txPageSize}
+                totalItems={txTotalTransactions}
+                totalPages={txTotalPages}
+                rowsPerPageOptions={[8, 16, 24]}
+                onPageChange={setTxPage}
+                onRowsPerPageChange={(nextPageSize) => {
+                  setTxPageSize(nextPageSize)
+                  setTxPage(1)
+                }}
+                loading={transactionsLoading}
+              />
             </section>
 
             {selectedTx ? (
@@ -957,115 +1373,145 @@ function App() {
         {activeTab === 'alerts' ? (
           <div className="panel-stack">
 
-            <section className="card form-grid">
-              <h3>Filter Alerts</h3>
-              <label>
-                Status
-                <select value={alertFilterStatus} onChange={(event) => setAlertFilterStatus(event.target.value as AlertStatus | '')}>
-                  <option value="">All</option>
-                  {STATUSES.map((entry) => (
-                    <option key={entry} value={entry}>{entry}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Severity
-                <select value={alertFilterSeverity} onChange={(event) => setAlertFilterSeverity(event.target.value as Severity | '')}>
-                  <option value="">All</option>
-                  {SEVERITIES.map((entry) => (
-                    <option key={entry} value={entry}>{entry}</option>
-                  ))}
-                </select>
-              </label>
-            </section>
-
             <section className="card">
-              <h3>Investigation Queue ({filteredAlerts.length})</h3>
-              <div className="alerts-grid">
-                {filteredAlerts.map((entry) => (
-                  <article key={entry.id} className="alert-card">
-                    <div className="alert-head">
-                      <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
-                      <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
-                    </div>
-                    <h4>{entry.ruleName}</h4>
-                    <p className="muted">{entry.message}</p>
-                    <p className="mono">AL-{entry.id} | ACC-{entry.accountId}</p>
-                    <button type="button" className="primary" onClick={() => setSelectedAlertId(entry.id)}>
-                      Investigate
-                    </button>
-                  </article>
-                ))}
+              <h3>Filter Alerts</h3>
+              <div className="alerts-filter-row">
+                <label>
+                  Alert ID
+                  <input
+                    placeholder="e.g. 120"
+                    value={alertSearchAlertIdDraft}
+                    onChange={(event) => setAlertSearchAlertIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Tid
+                  <input
+                    placeholder="e.g. 4501"
+                    value={alertSearchTransactionIdDraft}
+                    onChange={(event) => setAlertSearchTransactionIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Acc Id
+                  <input
+                    placeholder="e.g. ACC-001"
+                    value={alertSearchAccountIdDraft}
+                    onChange={(event) => setAlertSearchAccountIdDraft(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Severity
+                  <select value={alertFilterSeverityDraft} onChange={(event) => setAlertFilterSeverityDraft(event.target.value as Severity | '')}>
+                    <option value="">All</option>
+                    {SEVERITIES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Rule Type
+                  <select value={alertFilterRuleTypeDraft} onChange={(event) => setAlertFilterRuleTypeDraft(event.target.value as RuleType | '')}>
+                    <option value="">All</option>
+                    {RULE_TYPES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select value={alertFilterStatusDraft} onChange={(event) => setAlertFilterStatusDraft(event.target.value as AlertStatus | '')}>
+                    <option value="">All</option>
+                    {STATUSES.map((entry) => (
+                      <option key={entry} value={entry}>{entry}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="alerts-filter-actions">
+                  <button type="button" className="primary alerts-filter-submit" onClick={applyAlertFilters}>Apply Filter</button>
+                  <button type="button" className="ghost alerts-filter-submit" onClick={resetAlertFilters}>Reset Filter</button>
+                </div>
               </div>
             </section>
 
-            {selectedAlert ? (
-              <Modal isOpen={selectedAlert !== null} onClose={() => setSelectedAlertId(null)} titleId="alert-investigation-modal-title">
-                <form className="form-grid" onSubmit={moveAlertStatus}>
-                  <h3 id="alert-investigation-modal-title">Alert Investigation - AL-{selectedAlert.id}</h3>
-                  <p className="muted span-2">{selectedAlert.message}</p>
-                  <label>
-                    Next Status
-                    <select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AlertStatus)}>
-                      {STATUSES.filter((entry) => entry !== 'OPEN').map((entry) => (
-                        <option key={entry} value={entry}>{entry}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="span-2">
-                    Analyst Notes
-                    <input value={alertNote} onChange={(event) => setAlertNote(event.target.value)} placeholder="Add compliance note..." />
-                  </label>
-                  <button className="primary" type="submit">Update Alert Status</button>
-
-                  <div className="span-2 timeline-wrap">
-                    <div className="button-row">
-                      <button type="button" className="ghost" onClick={onInvestigateWithAi} disabled={aiLoading}>
-                        {aiLoading ? 'Investigating...' : 'Investigate with AI'}
-                      </button>
-                    </div>
-                    {aiError ? <p className="error-text">{aiError}</p> : null}
-                    {aiResult ? (
-                      <div className="ai-result">
-                        <h4>AI Investigation Result</h4>
-                        <p><strong>Risk Level:</strong> {aiResult.riskLevel}</p>
-                        <p><strong>Summary:</strong> {aiResult.summary}</p>
-                        <p><strong>Recommendation:</strong> {aiResult.recommendation}</p>
-                        {aiResult.keyFindings.length ? (
-                          <ul>
-                            {aiResult.keyFindings.map((finding, index) => (
-                              <li key={`ai-finding-${index}`}>{finding}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        <p className="muted mono">Model: {aiResult.model}</p>
-                      </div>
+            <section className="card">
+              <h3>Investigation Queue ({sortedAlerts.length})</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('id')}>
+                          Alert ID {alertSortColumn === 'id' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('severity')}>
+                          Severity {alertSortColumn === 'severity' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>Triggered Rule</th>
+                      <th>Related Account</th>
+                      <th>Related Txns</th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('status')}>
+                          Current Status {alertSortColumn === 'status' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>
+                        <button type="button" className="sort-header" onClick={() => toggleAlertSort('createdAt')}>
+                          Created Time {alertSortColumn === 'createdAt' ? (alertSortDirection === 'desc' ? '\u25BC' : '\u25B2') : '\u21C5'}
+                        </button>
+                      </th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
+                        <td className="mono">AL-{entry.id}</td>
+                        <td>
+                          <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
+                        </td>
+                        <td>{entry.ruleName}</td>
+                        <td className="mono">{entry.accountId}</td>
+                        <td className="mono">TX-{entry.transactionId} (1 tx)</td>
+                        <td>
+                          <span className={`badge st-${entry.status.toLowerCase()}`}>{entry.status}</span>
+                        </td>
+                        <td className="mono">{formatDate(entry.createdAt)}</td>
+                        <td>
+                          <button type="button" className="ghost" onClick={() => openInvestigateDialog(entry.id)}>
+                            Open Workspace &gt;
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {!pagedAlerts.length ? (
+                      <tr>
+                        <td className="empty-row" colSpan={8}>
+                          No alerts matched the selected filters.
+                        </td>
+                      </tr>
                     ) : null}
-                  </div>
+                  </tbody>
+                </table>
+              </div>
 
-                  <div className="span-2 timeline-wrap">
-                    <h4>Audit Trail</h4>
-                    <ul>
-                      <li>Created: {formatDate(selectedAlert.createdAt)}</li>
-                      <li>Acknowledged: {formatDate(selectedAlert.acknowledgedAt)}</li>
-                      <li>Investigating: {formatDate(selectedAlert.investigatingAt)}</li>
-                      <li>Closed: {formatDate(selectedAlert.closedAt)}</li>
-                      <li>Dismissed: {formatDate(selectedAlert.dismissedAt)}</li>
-                    </ul>
-                  </div>
-
-                  <div className="span-2">
-                    <h4>Notes History</h4>
-                    <ul>
-                      {(notesByAlertId[selectedAlert.id] ?? []).map((note, index) => (
-                        <li key={`${selectedAlert.id}-note-${index}`}>{note}</li>
-                      ))}
-                      {!notesByAlertId[selectedAlert.id]?.length ? <li className="muted">No notes added yet.</li> : null}
-                    </ul>
-                  </div>
-                </form>
-              </Modal>
-            ) : null}
+              <PaginationControls
+                page={alertPage}
+                pageSize={alertPageSize}
+                totalItems={sortedAlerts.length}
+                totalPages={alertTotalPages}
+                rowsPerPageOptions={[8, 16, 24]}
+                onPageChange={setAlertPage}
+                onRowsPerPageChange={(nextPageSize) => {
+                  setAlertPageSize(nextPageSize)
+                  setAlertPage(1)
+                }}
+                loading={loading}
+              />
+            </section>
           </div>
         ) : null}
 
@@ -1211,7 +1657,7 @@ function App() {
             </article>
 
             {simulatorResult ? (
-              <article className="card">
+              <article ref={simulatorResultRef} className="card">
                 <h3>Last Run: {simulatorResult.scenario}</h3>
                 <p className="muted">{simulatorResult.description}</p>
 
@@ -1271,66 +1717,21 @@ function App() {
           </section>
         ) : null}
 
-        {activeTab === 'apidocs' ? (
-          <section className="panel-stack">
-            <article className="card">
-              <h3>OpenAPI / REST API Docs & Live Runner</h3>
-              <div className="split-grid">
-                <div>
-                  <h4>Endpoints</h4>
-                  <ul className="mono endpoint-list">
-                    {API_DOCS.map((entry) => (
-                      <li key={`${entry.method}-${entry.path}`}>
-                        <button
-                          type="button"
-                          className="ghost endpoint-btn"
-                          onClick={() => {
-                            setApiMethod(entry.method)
-                            setApiEndpoint(entry.path.replace('{id}', '1'))
-                          }}
-                        >
-                          {entry.method} {entry.path}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="api-runner">
-                  <label>
-                    Method
-                    <select value={apiMethod} onChange={(event) => setApiMethod(event.target.value)}>
-                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => <option key={method} value={method}>{method}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Endpoint
-                    <input className="mono" value={apiEndpoint} onChange={(event) => setApiEndpoint(event.target.value)} />
-                  </label>
-                  <label>
-                    JSON Body
-                    <textarea className="mono api-body" value={apiBody} onChange={(event) => setApiBody(event.target.value)} />
-                  </label>
-                  <div className="api-runner-actions">
-                    <button type="button" className="primary" onClick={() => void runApiRequest()}>Run Request</button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => {
-                        const openApiJson = JSON.stringify({ openapi: '3.0.0', paths: API_DOCS }, null, 2)
-                        void navigator.clipboard.writeText(openApiJson)
-                      }}
-                    >
-                      Copy OpenAPI 3.0 JSON
-                    </button>
-                  </div>
-                  <pre className="response-box mono">{apiResponse || 'Response output will appear here.'}</pre>
-                </div>
-              </div>
-            </article>
-          </section>
-        ) : null}
-
         {loading ? <p className="muted">Loading latest data...</p> : null}
+
+        <InvestigationDialog
+          open={openInvestigation && selectedAlertForDialog !== null}
+          alert={selectedAlertForDialog}
+          notes={selectedAlert ? (notesByAlertId[selectedAlert.id] ?? []) : []}
+          onClose={closeInvestigateDialog}
+          onWorkflowStatusChange={handleWorkflowStatusChange}
+          onPostNote={postInvestigationNote}
+          onSaveInvestigation={saveInvestigation}
+          aiResult={aiResult}
+          aiLoading={aiLoading}
+          aiError={aiError}
+          onInvestigateWithAi={onInvestigateWithAi}
+        />
       </section>
     </div>
   )

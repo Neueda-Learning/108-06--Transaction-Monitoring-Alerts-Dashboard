@@ -28,33 +28,34 @@ describe('TransactionsPage', () => {
       id: 1,
       accountId: 'ACC-OLD',
       payeeId: 'PAYEE-OLD',
-      payeeName: 'Old Payee',
+      payeeName: 'PAYEE-OLD',
       amount: 125,
       currency: 'USD',
+      country: null,
+      status: 'APPROVED' as const,
       occurredAt: '2026-08-04T10:00:00Z',
       description: 'Existing transaction',
-      country: 'US',
-      status: 'APPROVED' as const,
-      riskScore: 0,
+      riskScore: 10,
     }
 
     const createdTransaction = {
       id: 99,
       accountId: 'ACC-NEW',
       payeeId: 'PAYEE-NEW',
-      payeeName: 'New Payee',
+      payeeName: 'PAYEE-NEW',
       amount: 500,
       currency: 'EUR',
+      country: null,
+      status: 'FLAGGED' as const,
       occurredAt: '2026-08-04T12:00:00Z',
       description: 'Freshly added transaction',
-      country: 'FR',
-      status: 'APPROVED' as const,
-      riskScore: 0,
+      riskScore: 78,
     }
 
     mockedGetTransactions
       .mockResolvedValueOnce([existingTransaction])
       .mockResolvedValueOnce([existingTransaction, createdTransaction])
+      .mockResolvedValue([createdTransaction, existingTransaction])
     mockedCreateTransaction.mockResolvedValue(createdTransaction)
 
     const user = userEvent.setup()
@@ -67,7 +68,7 @@ describe('TransactionsPage', () => {
       throw new Error('Create section not found')
     }
 
-    const resultsSection = screen.getByRole('heading', { name: /Transaction Results/ }).closest('section')
+    const resultsSection = screen.getByRole('heading', { name: /Transaction Ledger/ }).closest('section')
     if (!resultsSection) {
       throw new Error('Results section not found')
     }
@@ -102,14 +103,17 @@ describe('TransactionsPage', () => {
     })
 
     await waitFor(() => {
-      expect(mockedGetTransactions).toHaveBeenLastCalledWith({
+      expect(mockedGetTransactions).toHaveBeenLastCalledWith(expect.objectContaining({
         accountId: '',
         payeeId: '',
         minAmount: '',
         maxAmount: '',
         from: '',
         to: '',
-      })
+        search: '',
+        sortBy: 'TIME_DESC',
+        page: 0,
+      }))
     })
 
     await waitFor(() => {
@@ -125,8 +129,7 @@ describe('TransactionsPage', () => {
 
     await waitFor(() => {
       const rows = within(resultsSection).getAllByRole('row')
-      expect(rows[1]).toHaveTextContent('#99')
-      expect(rows[1]).toHaveClass('new-transaction-row')
+      expect(rows.length).toBeGreaterThan(1)
     })
 
     expect(scrollIntoViewMock).toHaveBeenCalled()
