@@ -1011,8 +1011,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeWorkloadAlerts.map((entry) => (
-                      <tr key={entry.id}>
+                    {activeWorkloadAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
                         <td className="mono">#{entry.id}</td>
                         <td>
                           <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
@@ -1383,8 +1383,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedAlerts.map((entry) => (
-                      <tr key={entry.id}>
+                    {sortedAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
                         <td className="mono">AL-{entry.id}</td>
                         <td>
                           <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
