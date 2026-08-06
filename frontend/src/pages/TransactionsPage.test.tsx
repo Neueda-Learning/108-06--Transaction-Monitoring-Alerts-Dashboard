@@ -1,7 +1,10 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { Mock } from 'vitest'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTransaction, getTransactions } from '../api/transactions'
+import type { TransactionFilters } from '../api/transactions'
+import type { TransactionResponse } from '../api/types'
 import { TransactionsPage } from './TransactionsPage'
 
 vi.mock('../api/transactions', () => ({
@@ -10,7 +13,8 @@ vi.mock('../api/transactions', () => ({
 }))
 
 const mockedCreateTransaction = vi.mocked(createTransaction)
-const mockedGetTransactions = vi.mocked(getTransactions)
+// vi.mocked() collapses overloaded functions to their last signature; cast to the non-paginated overload used by these tests.
+const mockedGetTransactions = getTransactions as unknown as Mock<(filters?: TransactionFilters) => Promise<TransactionResponse[]>>
 const scrollIntoViewMock = vi.fn()
 
 describe('TransactionsPage', () => {
