@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Moon,
   PlaySquare,
+  Plus,
   Search,
   ShieldAlert,
   SlidersHorizontal,
@@ -160,6 +161,7 @@ function App() {
   const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
   const [createdTxId, setCreatedTxId] = useState<number | null>(null)
+  const [isCreateTxModalOpen, setIsCreateTxModalOpen] = useState(false)
   const ledgerTableWrapRef = useRef<HTMLDivElement | null>(null)
 
   const [ruleForm, setRuleForm] = useState<MonitoringRuleRequest>({
@@ -170,6 +172,7 @@ function App() {
     amountThreshold: 10000,
   })
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [isRuleModalOpen, setIsRuleModalOpen] = useState(false)
 
   const [transactionForm, setTransactionForm] = useState({
     accountId: '',
@@ -664,6 +667,7 @@ function App() {
         currency: '',
         description: '',
       })
+      setIsCreateTxModalOpen(false)
 
       // Keep dashboard metrics consistent while the new row is shown immediately in the ledger.
       void loadAll()
@@ -779,12 +783,25 @@ function App() {
         active: true,
         amountThreshold: 10000,
       })
+      setIsRuleModalOpen(false)
       await loadAll()
       showSuccessToast(isCreatingRule ? 'Rule created' : 'Rule updated successfully')
     } catch (ruleError) {
       setError(ruleError instanceof Error ? ruleError.message : 'Failed to save rule')
     }
   }
+
+  const closeRuleModal = useCallback(() => {
+    setIsRuleModalOpen(false)
+    setEditingRuleId(null)
+    setRuleForm({
+      name: '',
+      type: 'AMOUNT_THRESHOLD',
+      severity: 'MEDIUM',
+      active: true,
+      amountThreshold: 10000,
+    })
+  }, [])
 
   const removeRule = async (id: number) => {
     setError(null)
@@ -884,6 +901,18 @@ function App() {
             <p>Rule Engine Active - Single operator compliance workflow</p>
           </div>
           <div className="top-header-actions">
+            {activeTab === 'transactions' ? (
+              <button className="primary" type="button" onClick={() => setIsCreateTxModalOpen(true)}>
+                <Plus size={15} />
+                Record Transaction
+              </button>
+            ) : null}
+            {activeTab === 'rules' ? (
+              <button className="primary" type="button" onClick={() => setIsRuleModalOpen(true)}>
+                <Plus size={15} />
+                Create Monitoring Rule
+              </button>
+            ) : null}
             <span className="status-pill">
               <Activity size={14} />
               Live
@@ -1118,59 +1147,67 @@ function App() {
 
         {activeTab === 'transactions' ? (
           <div className="panel-stack">
-            <form className="card form-grid" onSubmit={saveTransaction}>
-              <h3>Create Transaction</h3>
-              <label>
-                Account ID
-                <input
-                  value={transactionForm.accountId}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, accountId: event.target.value }))}
-                  placeholder={TX_CREATE_PLACEHOLDERS.accountId}
-                  required
-                />
-              </label>
-              <label>
-                Payee ID
-                <input
-                  value={transactionForm.payeeId}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, payeeId: event.target.value }))}
-                  placeholder={TX_CREATE_PLACEHOLDERS.payeeId}
-                  required
-                />
-              </label>
-              <label>
-                Amount
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={transactionForm.amount}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, amount: event.target.value }))}
-                  placeholder={TX_CREATE_PLACEHOLDERS.amount}
-                  required
-                />
-              </label>
-              <label>
-                Currency
-                <input
-                  value={transactionForm.currency}
-                  maxLength={3}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, currency: event.target.value }))}
-                  placeholder={TX_CREATE_PLACEHOLDERS.currency}
-                  required
-                />
-              </label>
-              <label className="span-2">
-                Description
-                <input
-                  value={transactionForm.description}
-                  onChange={(event) => setTransactionForm((prev) => ({ ...prev, description: event.target.value }))}
-                />
-              </label>
-              <button className="primary" type="submit">
-                Create Transaction
-              </button>
-            </form>
+            {isCreateTxModalOpen ? (
+              <Modal
+                isOpen={isCreateTxModalOpen}
+                onClose={() => setIsCreateTxModalOpen(false)}
+                titleId="create-transaction-modal-title"
+              >
+                <form className="form-grid" onSubmit={saveTransaction}>
+                  <h3 id="create-transaction-modal-title">Create Transaction</h3>
+                  <label>
+                    Account ID
+                    <input
+                      value={transactionForm.accountId}
+                      onChange={(event) => setTransactionForm((prev) => ({ ...prev, accountId: event.target.value }))}
+                      placeholder={TX_CREATE_PLACEHOLDERS.accountId}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Payee ID
+                    <input
+                      value={transactionForm.payeeId}
+                      onChange={(event) => setTransactionForm((prev) => ({ ...prev, payeeId: event.target.value }))}
+                      placeholder={TX_CREATE_PLACEHOLDERS.payeeId}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Amount
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={transactionForm.amount}
+                      onChange={(event) => setTransactionForm((prev) => ({ ...prev, amount: event.target.value }))}
+                      placeholder={TX_CREATE_PLACEHOLDERS.amount}
+                      required
+                    />
+                  </label>
+                  <label>
+                    Currency
+                    <input
+                      value={transactionForm.currency}
+                      maxLength={3}
+                      onChange={(event) => setTransactionForm((prev) => ({ ...prev, currency: event.target.value }))}
+                      placeholder={TX_CREATE_PLACEHOLDERS.currency}
+                      required
+                    />
+                  </label>
+                  <label className="span-2">
+                    Description
+                    <input
+                      value={transactionForm.description}
+                      onChange={(event) => setTransactionForm((prev) => ({ ...prev, description: event.target.value }))}
+                    />
+                  </label>
+                  <button className="primary" type="submit">
+                    Create Transaction
+                  </button>
+                </form>
+              </Modal>
+            ) : null}
 
             <section className="card tx-toolbar">
               <div className="toolbar-item search-wrap">
@@ -1419,55 +1456,61 @@ function App() {
 
         {activeTab === 'rules' ? (
           <div className="panel-stack">
-            <form className="card form-grid" onSubmit={submitRule}>
-              <h3>{editingRuleId ? `Edit Rule #${editingRuleId}` : 'Create Monitoring Rule'}</h3>
-              <label>
-                Rule Name
-                <input value={ruleForm.name} onChange={(event) => setRuleForm((prev) => ({ ...prev, name: event.target.value }))} required />
-              </label>
-              <label>
-                Rule Type
-                <select value={ruleForm.type} onChange={(event) => setRuleForm((prev) => ({ ...prev, type: event.target.value as RuleType }))}>
-                  {RULE_TYPES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
-                </select>
-              </label>
-              <label>
-                Severity
-                <select value={ruleForm.severity} onChange={(event) => setRuleForm((prev) => ({ ...prev, severity: event.target.value as Severity }))}>
-                  {SEVERITIES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
-                </select>
-              </label>
-              <label className="checkbox-row">
-                <input type="checkbox" checked={ruleForm.active} onChange={(event) => setRuleForm((prev) => ({ ...prev, active: event.target.checked }))} />
-                Active
-              </label>
+            {isRuleModalOpen ? (
+              <Modal isOpen={isRuleModalOpen} onClose={closeRuleModal} titleId="rule-modal-title">
+                <form className="form-grid" onSubmit={submitRule}>
+                  <h3 id="rule-modal-title">{editingRuleId ? `Edit Rule #${editingRuleId}` : 'Create Monitoring Rule'}</h3>
+                  <label>
+                    Rule Name
+                    <input value={ruleForm.name} onChange={(event) => setRuleForm((prev) => ({ ...prev, name: event.target.value }))} required />
+                  </label>
+                  <label>
+                    Rule Type
+                    <select value={ruleForm.type} onChange={(event) => setRuleForm((prev) => ({ ...prev, type: event.target.value as RuleType }))}>
+                      {RULE_TYPES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    Severity
+                    <select value={ruleForm.severity} onChange={(event) => setRuleForm((prev) => ({ ...prev, severity: event.target.value as Severity }))}>
+                      {SEVERITIES.map((entry) => <option key={entry} value={entry}>{entry}</option>)}
+                    </select>
+                  </label>
 
-              {ruleForm.type === 'AMOUNT_THRESHOLD' ? (
-                <label>
-                  Amount Limit
-                  <input type="number" value={ruleForm.amountThreshold ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, amountThreshold: Number(event.target.value) }))} />
-                </label>
-              ) : null}
-              {ruleForm.type === 'VELOCITY' ? (
-                <>
-                  <label>
-                    Max Tx Count
-                    <input type="number" value={ruleForm.velocityCount ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, velocityCount: Number(event.target.value) }))} />
+                  {ruleForm.type === 'AMOUNT_THRESHOLD' ? (
+                    <label>
+                      Amount Limit
+                      <input type="number" value={ruleForm.amountThreshold ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, amountThreshold: Number(event.target.value) }))} />
+                    </label>
+                  ) : null}
+                  {ruleForm.type === 'VELOCITY' ? (
+                    <>
+                      <label>
+                        Max Tx Count
+                        <input type="number" value={ruleForm.velocityCount ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, velocityCount: Number(event.target.value) }))} />
+                      </label>
+                      <label>
+                        Window Minutes
+                        <input type="number" value={ruleForm.velocityWindowMinutes ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, velocityWindowMinutes: Number(event.target.value) }))} />
+                      </label>
+                    </>
+                  ) : null}
+                  {ruleForm.type === 'DAILY_LIMIT' ? (
+                    <label>
+                      Daily Limit
+                      <input type="number" value={ruleForm.dailyLimit ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, dailyLimit: Number(event.target.value) }))} />
+                    </label>
+                  ) : null}
+
+                  <label className="checkbox-row">
+                    <input type="checkbox" checked={ruleForm.active} onChange={(event) => setRuleForm((prev) => ({ ...prev, active: event.target.checked }))} />
+                    Active
                   </label>
-                  <label>
-                    Window Minutes
-                    <input type="number" value={ruleForm.velocityWindowMinutes ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, velocityWindowMinutes: Number(event.target.value) }))} />
-                  </label>
-                </>
-              ) : null}
-              {ruleForm.type === 'DAILY_LIMIT' ? (
-                <label>
-                  Daily Limit
-                  <input type="number" value={ruleForm.dailyLimit ?? ''} onChange={(event) => setRuleForm((prev) => ({ ...prev, dailyLimit: Number(event.target.value) }))} />
-                </label>
-              ) : null}
-              <button className="primary" type="submit">{editingRuleId ? 'Update Rule' : 'Create Rule'}</button>
-            </form>
+
+                  <button className="primary" type="submit">{editingRuleId ? 'Update Rule' : 'Create Rule'}</button>
+                </form>
+              </Modal>
+            ) : null}
 
             <section className="card">
               <h3>Rules Catalog ({rules.length})</h3>
@@ -1516,6 +1559,7 @@ function App() {
                                 velocityWindowMinutes: entry.velocityWindowMinutes,
                                 dailyLimit: entry.dailyLimit,
                               })
+                              setIsRuleModalOpen(true)
                             }}
                           >
                             Edit
