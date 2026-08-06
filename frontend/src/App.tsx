@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
   Activity,
@@ -37,7 +37,6 @@ import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
-import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
 import { PaginationControls } from './components/PaginationControls'
 import type {
@@ -56,6 +55,11 @@ import type {
 } from './api/types'
 import type { InvestigationNote } from './models/alertModels'
 import { formatCurrency, formatDate, riskBucket } from './utils/format'
+
+// Lazy-loaded so the MUI dependency it pulls in isn't part of the initial bundle.
+const InvestigationDialog = lazy(() =>
+  import('./components/InvestigationDialog').then((mod) => ({ default: mod.InvestigationDialog })),
+)
 
 type TabType =
   | 'dashboard'
@@ -979,10 +983,15 @@ function App() {
               <Activity size={14} />
               Live
             </span>
-            <button className="ghost icon-btn" type="button" onClick={() => setDarkMode((prev) => !prev)}>
+            <button
+              className="ghost icon-btn"
+              type="button"
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              onClick={() => setDarkMode((prev) => !prev)}
+            >
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <button className="primary icon-btn" type="button" onClick={handleRefresh}>
+            <button className="primary icon-btn" type="button" aria-label="Refresh data" onClick={handleRefresh}>
               <Bell size={14} />
             </button>
             <div className="avatar-chip">
@@ -991,6 +1000,7 @@ function App() {
           </div>
         </header>
 
+        <main>
         {error ? <p className="error-banner">{error}</p> : null}
 
         {activeTab === 'dashboard' ? (
@@ -1762,20 +1772,25 @@ function App() {
         ) : null}
 
         {loading ? <p className="muted">Loading latest data...</p> : null}
+        </main>
 
-        <InvestigationDialog
-          open={openInvestigation && selectedAlertForDialog !== null}
-          alert={selectedAlertForDialog}
-          notes={selectedAlert ? (notesByAlertId[selectedAlert.id] ?? []) : []}
-          onClose={closeInvestigateDialog}
-          onWorkflowStatusChange={handleWorkflowStatusChange}
-          onPostNote={postInvestigationNote}
-          onSaveInvestigation={saveInvestigation}
-          aiResult={aiResult}
-          aiLoading={aiLoading}
-          aiError={aiError}
-          onInvestigateWithAi={onInvestigateWithAi}
-        />
+        {openInvestigation && selectedAlertForDialog !== null ? (
+          <Suspense fallback={null}>
+            <InvestigationDialog
+              open={openInvestigation && selectedAlertForDialog !== null}
+              alert={selectedAlertForDialog}
+              notes={selectedAlert ? (notesByAlertId[selectedAlert.id] ?? []) : []}
+              onClose={closeInvestigateDialog}
+              onWorkflowStatusChange={handleWorkflowStatusChange}
+              onPostNote={postInvestigationNote}
+              onSaveInvestigation={saveInvestigation}
+              aiResult={aiResult}
+              aiLoading={aiLoading}
+              aiError={aiError}
+              onInvestigateWithAi={onInvestigateWithAi}
+            />
+          </Suspense>
+        ) : null}
       </section>
     </div>
   )
