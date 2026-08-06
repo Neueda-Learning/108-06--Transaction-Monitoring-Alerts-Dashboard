@@ -955,23 +955,43 @@ function App() {
         {activeTab === 'dashboard' ? (
           <div className="panel-stack">
             <section className="kpi-grid">
-              <article className="card metric-card">
-                <h3>Total Recorded Transactions</h3>
+              <article className="card metric-card metric-accent-blue">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-blue">
+                    <ArrowLeftRight size={16} />
+                  </span>
+                  <h3>Total Recorded Transactions</h3>
+                </div>
                 <p>{metrics.totalTransactions}</p>
                 <span className="trend up">+{weekTrend.transactions}% WoW</span>
               </article>
-              <article className="card metric-card">
-                <h3>Flagged High-Risk Alerts</h3>
+              <article className="card metric-card metric-accent-red">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-red">
+                    <AlertTriangle size={16} />
+                  </span>
+                  <h3>Flagged High-Risk Alerts</h3>
+                </div>
                 <p className="critical">{metrics.highSeverity}</p>
                 <span className="trend down">{weekTrend.alerts}% WoW</span>
               </article>
-              <article className="card metric-card">
-                <h3>Total Monitored Volume</h3>
+              <article className="card metric-card metric-accent-green">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-green">
+                    <Activity size={16} />
+                  </span>
+                  <h3>Total Monitored Volume</h3>
+                </div>
                 <p>{formatCurrency(metrics.totalVolume, 'GBP')}</p>
                 <span className="trend up">+{weekTrend.volume}% WoW</span>
               </article>
-              <article className="card metric-card">
-                <h3>Active Monitoring Rules</h3>
+              <article className="card metric-card metric-accent-violet">
+                <div className="metric-card-head">
+                  <span className="metric-icon metric-icon-violet">
+                    <SlidersHorizontal size={16} />
+                  </span>
+                  <h3>Active Monitoring Rules</h3>
+                </div>
                 <p>{metrics.activeRules}</p>
                 <span className="trend neutral">Stable</span>
               </article>
@@ -979,7 +999,13 @@ function App() {
 
             <section className="chart-grid">
               <article className="card chart-card">
-                <h3>Transactions Over Time</h3>
+                <div className="chart-card-head">
+                  <div>
+                    <h3>Transactions Over Time</h3>
+                    <p className="chart-subtitle">Volume distribution across the day</p>
+                  </div>
+                  <span className="chart-tag chart-tag-red">Bar</span>
+                </div>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData.txOverTime}>
@@ -994,7 +1020,13 @@ function App() {
               </article>
 
               <article className="card chart-card">
-                <h3>Alert Severity Distribution</h3>
+                <div className="chart-card-head">
+                  <div>
+                    <h3>Alert Severity Distribution</h3>
+                    <p className="chart-subtitle">Breakdown by risk severity level</p>
+                  </div>
+                  <span className="chart-tag chart-tag-amber">Bar</span>
+                </div>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData.bySeverity}>
@@ -1013,7 +1045,13 @@ function App() {
               </article>
 
               <article className="card chart-card">
-                <h3>Alert Lifecycle Breakdown</h3>
+                <div className="chart-card-head">
+                  <div>
+                    <h3>Alert Lifecycle Breakdown</h3>
+                    <p className="chart-subtitle">Current status across all alerts</p>
+                  </div>
+                  <span className="chart-tag chart-tag-violet">Pie</span>
+                </div>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -1029,13 +1067,25 @@ function App() {
               </article>
 
               <article className="card chart-card">
-                <h3>Alerts by Rule Type</h3>
+                <div className="chart-card-head">
+                  <div>
+                    <h3>Alerts by Rule Type</h3>
+                    <p className="chart-subtitle">Which detection rules fire most</p>
+                  </div>
+                  <span className="chart-tag chart-tag-violet">Bar</span>
+                </div>
                 <div className="chart-area">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 56, right: 12 }}>
+                    <BarChart data={chartData.byRule} layout="vertical" margin={{ left: 4, right: 12 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                       <XAxis type="number" allowDecimals={false} />
-                      <YAxis dataKey="label" type="category" width={156} />
+                      <YAxis
+                        dataKey="label"
+                        type="category"
+                        width={140}
+                        tickMargin={10}
+                        tick={{ fontSize: 11 }}
+                      />
                       <Tooltip />
                       <Bar dataKey="count" fill="#7c3aed" radius={[0, 6, 6, 0]} />
                     </BarChart>
@@ -1045,7 +1095,10 @@ function App() {
             </section>
 
             <section className="card">
-              <h3>Recent Alerts Workload</h3>
+              <div className="section-head">
+                <h3>Recent Alerts Workload</h3>
+                <span className="chart-tag chart-tag-red">Priority</span>
+              </div>
               <p className="muted table-caption">Priority queue for immediate investigation</p>
               <div className="table-wrap">
                 <table>
@@ -1101,9 +1154,14 @@ function App() {
 
             <section className="card dashboard-summary">
               <div className="dashboard-summary-header">
-                <div>
-                  <h3>AI Dashboard Summary</h3>
-                  <p className="muted">Generate a concise summary and insights inferred from current dashboard activity.</p>
+                <div className="chart-card-head" style={{ marginBottom: 0 }}>
+                  <span className="metric-icon metric-icon-violet">
+                    <Bot size={16} />
+                  </span>
+                  <div>
+                    <h3>AI Dashboard Summary</h3>
+                    <p className="muted chart-subtitle">Generate a concise summary and insights inferred from current dashboard activity.</p>
+                  </div>
                 </div>
                 <div className="dashboard-summary-actions">
                   <button
