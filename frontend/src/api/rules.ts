@@ -1,8 +1,16 @@
 import { apiRequest } from './client'
-import type { MonitoringRuleRequest, MonitoringRuleResponse } from './types'
+import type { MonitoringRuleRequest, MonitoringRuleResponse, PagedResponse, PaginationParams } from './types'
 
-export function getRules() {
-  return apiRequest<MonitoringRuleResponse[]>('/api/rules')
+export interface RuleFilters {
+  search?: string
+}
+
+export function getRules(filters?: RuleFilters): Promise<MonitoringRuleResponse[]>
+export function getRules(filters: RuleFilters & PaginationParams): Promise<PagedResponse<MonitoringRuleResponse>>
+export function getRules(filters: (RuleFilters & PaginationParams) = {}) {
+  const { page, size, ...query } = filters
+  const params = page !== undefined && size !== undefined ? { ...query, page, size } : query
+  return apiRequest<MonitoringRuleResponse[] | PagedResponse<MonitoringRuleResponse>>('/api/rules', { params })
 }
 
 export function getRuleById(id: number) {

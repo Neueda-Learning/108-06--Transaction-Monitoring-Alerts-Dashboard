@@ -138,13 +138,7 @@ Started Transaction_Monitoring in 5.123 seconds
 Application running at http://localhost:8080
 ```
 
-### 4. Access Backend Documentation
-
-Once running, visit:
-- **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- **API Docs**: [http://localhost:8080/api-docs](http://localhost:8080/api-docs)
-
-### Backend Database Configuration
+### 4. Backend Database Configuration
 
 The backend reads shared MySQL defaults from `src/main/resources/application.properties` and expects credentials from environment variables or a local profile override.
 
@@ -308,9 +302,6 @@ DELETE /api/rules/{id}         - Delete a monitoring rule
 
 GET    /api/sdn/search         - Fuzzy search the loaded SDN list
 GET    /api/sdn/count          - Count loaded SDN entries
-
-GET    /api-docs               - OpenAPI specification
-GET    /swagger-ui.html        - Swagger UI documentation
 ```
 
 ---
@@ -374,7 +365,6 @@ npm run lint -- --fix
 - [ ] `transaction_management` database created
 - [ ] Backend builds without errors
 - [ ] Backend runs on `http://localhost:8080`
-- [ ] Swagger UI accessible at `http://localhost:8080/swagger-ui.html`
 - [ ] Frontend dependencies installed (`npm install` completed)
 - [ ] Frontend runs on `http://localhost:5173`
 - [ ] Frontend can communicate with backend

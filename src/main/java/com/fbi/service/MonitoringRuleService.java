@@ -7,6 +7,9 @@ import com.fbi.model.MonitoringRule;
 import com.fbi.model.RuleType;
 import com.fbi.repository.MonitoringRuleRepository;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,6 +23,10 @@ public class MonitoringRuleService {
 
     public List<MonitoringRule> getAll() {
         return monitoringRuleRepository.findAll();
+    }
+
+    public Page<MonitoringRule> getAllPaged(String search, Pageable pageable) {
+        return monitoringRuleRepository.findAll(buildSearchSpecification(search), pageable);
     }
 
     public MonitoringRule getById(Long id) {
@@ -80,5 +87,27 @@ public class MonitoringRuleService {
         if (type == RuleType.DAILY_LIMIT && request.dailyLimit() == null) {
             throw new BadRequestException("dailyLimit is required for DAILY_LIMIT rules");
         }
+    }
+
+    private Specification<MonitoringRule> buildSearchSpecification(String search) {
+        return (root, query, cb) -> {
+            if (search == null || search.isBlank()) {
+                return cb.conjunction();
+            }
+
+            String normalized = search.trim().toLowerCase();
+            String like = "%" + normalized + "%";
+            boolean activeMatch = "active".contains(normalized);
+            boolean inactiveMatch = "inactive".contains(normalized);
+
+            return cb.or(
+                cb.like(cb.lower(root.get("name")), like),
+                cb.like(cb.lower(root.get("type").as(String.class)), like),
+                cb.like(cb.lower(root.get("severity").as(String.class)), like),
+                activeMatch ? cb.isTrue(root.get("active")) : cb.disjunction(),
+                inactiveMatch ? cb.isFalse(root.get("active")) : cb.disjunction(),
+                cb.like(root.get("id").as(String.class), like)
+            );
+        };
     }
 }

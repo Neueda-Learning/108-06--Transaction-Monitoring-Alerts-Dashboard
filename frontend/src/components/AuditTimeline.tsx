@@ -90,7 +90,7 @@ export function AuditTimeline({ events, loading }: AuditTimelineProps) {
               const isLast = index === sorted.length - 1
 
               return (
-                <Box key={event.id} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                <Box key={`${event.id}-${event.occurredAt}-${event.eventType}-${index}`} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                   {/* Timeline line + icon */}
                   <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 36 }}>
                     <Box

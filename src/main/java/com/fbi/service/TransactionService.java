@@ -23,6 +23,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -156,18 +158,64 @@ public class TransactionService {
     public List<MonitoredTransaction> search(
         String accountId,
         String payeeId,
+        TransactionStatus status,
         BigDecimal minAmount,
         BigDecimal maxAmount,
         Instant from,
         Instant to
     ) {
-        Specification<MonitoredTransaction> spec = (root, query, cb) -> {
+        return transactionRepository.findAll(buildSearchSpecification(accountId, payeeId, status, null, minAmount, maxAmount, from, to));
+    }
+
+    public Page<MonitoredTransaction> searchPaged(
+        String accountId,
+        String payeeId,
+        TransactionStatus status,
+        String search,
+        BigDecimal minAmount,
+        BigDecimal maxAmount,
+        Instant from,
+        Instant to,
+        Pageable pageable
+    ) {
+        return transactionRepository.findAll(
+            buildSearchSpecification(accountId, payeeId, status, search, minAmount, maxAmount, from, to),
+            pageable
+        );
+    }
+
+    private Specification<MonitoredTransaction> buildSearchSpecification(
+        String accountId,
+        String payeeId,
+        TransactionStatus status,
+        String search,
+        BigDecimal minAmount,
+        BigDecimal maxAmount,
+        Instant from,
+        Instant to
+    ) {
+        return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (accountId != null && !accountId.isBlank()) {
                 predicates.add(cb.equal(root.get("accountId"), accountId));
             }
             if (payeeId != null && !payeeId.isBlank()) {
                 predicates.add(cb.equal(root.get("payeeId"), payeeId));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (search != null && !search.isBlank()) {
+                String like = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                    cb.like(cb.lower(root.get("accountId")), like),
+                    cb.like(cb.lower(root.get("payeeId")), like),
+                    cb.like(cb.lower(root.get("payeeName")), like),
+                    cb.like(cb.lower(root.get("currency")), like),
+                    cb.like(cb.lower(root.get("description")), like),
+                    cb.like(cb.lower(root.get("status").as(String.class)), like),
+                    cb.like(root.get("id").as(String.class), like)
+                ));
             }
             if (minAmount != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("amount"), minAmount));
@@ -183,7 +231,5 @@ public class TransactionService {
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
-
-        return transactionRepository.findAll(spec);
     }
 }

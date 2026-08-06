@@ -9,7 +9,6 @@ import {
   Clock3,
   Copy,
   Download,
-  FileCode2,
   LayoutDashboard,
   Moon,
   PlaySquare,
@@ -34,13 +33,13 @@ import {
 } from 'recharts'
 import { toast } from 'react-hot-toast'
 import { getAlerts, investigateWithAi, updateAlertStatus } from './api/alerts'
-import { apiRequest } from './api/client'
 import { generateAiDashboardSummary } from './api/dashboard'
 import { createRule, deleteRule, getRules, updateRule } from './api/rules'
 import { runSimulatorScenario as runSimulatorScenarioRequest } from './api/simulator'
 import { createTransaction, getTransactions } from './api/transactions'
 import { InvestigationDialog } from './components/InvestigationDialog'
 import { Modal } from './components/Modal'
+import { PaginationControls } from './components/PaginationControls'
 import type {
   AiDashboardSummaryResponse,
   AiInvestigationResponse,
@@ -48,10 +47,12 @@ import type {
   AlertStatus,
   MonitoringRuleRequest,
   MonitoringRuleResponse,
+  PagedResponse,
   RuleType,
   Severity,
   SimulationResult,
   TransactionResponse,
+  TransactionStatus,
 } from './api/types'
 import type { InvestigationNote } from './models/alertModels'
 import { formatCurrency, formatDate, riskBucket } from './utils/format'
@@ -62,7 +63,6 @@ type TabType =
   | 'alerts'
   | 'rules'
   | 'simulator'
-  | 'apidocs'
 
 const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -70,27 +70,11 @@ const TABS: Array<{ id: TabType; label: string; icon: typeof LayoutDashboard }> 
   { id: 'alerts', label: 'Alerts', icon: ShieldAlert },
   { id: 'rules', label: 'Monitoring Rules', icon: SlidersHorizontal },
   { id: 'simulator', label: 'Simulator', icon: PlaySquare },
-  { id: 'apidocs', label: 'API Docs', icon: FileCode2 },
 ]
 
 const STATUSES: AlertStatus[] = ['OPEN', 'ACKNOWLEDGED', 'INVESTIGATING', 'CLOSED', 'DISMISSED']
 const RULE_TYPES: RuleType[] = ['AMOUNT_THRESHOLD', 'VELOCITY', 'NEW_PAYEE', 'DAILY_LIMIT']
 const SEVERITIES: Severity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
-
-const API_DOCS = [
-  { method: 'GET', path: '/api/transactions' },
-  { method: 'POST', path: '/api/transactions' },
-  { method: 'GET', path: '/api/alerts' },
-  { method: 'GET', path: '/api/alerts/{id}' },
-  { method: 'PATCH', path: '/api/alerts/{id}/status' },
-  { method: 'GET', path: '/api/rules' },
-  { method: 'GET', path: '/api/rules/{id}' },
-  { method: 'POST', path: '/api/rules' },
-  { method: 'PUT', path: '/api/rules/{id}' },
-  { method: 'DELETE', path: '/api/rules/{id}' },
-  { method: 'GET', path: '/api/sdn/search?name={name}&threshold=0.80' },
-  { method: 'GET', path: '/api/sdn/count' },
-]
 
 const TX_CREATE_PLACEHOLDERS = {
   accountId: 'ACC-001',
@@ -111,6 +95,10 @@ type DashboardSummary = AiDashboardSummaryResponse
 
 type AlertSortColumn = 'id' | 'transactionId' | 'accountId' | 'severity' | 'status' | 'createdAt'
 type AlertSortDirection = 'desc' | 'asc'
+type TransactionLedgerEntry = TransactionResponse & {
+  derivedStatus: TransactionStatus
+  linkedAlerts: AlertResponse[]
+}
 
 function getAlertCreatedToastMessage(count: number) {
   return count === 1 ? 'Alert created' : `${count} alerts created`
@@ -140,6 +128,8 @@ function App() {
   const [appliedAlertSearchAccountId, setAppliedAlertSearchAccountId] = useState('')
   const [alertSortColumn, setAlertSortColumn] = useState<AlertSortColumn>('createdAt')
   const [alertSortDirection, setAlertSortDirection] = useState<AlertSortDirection>('desc')
+  const [alertPage, setAlertPage] = useState(1)
+  const [alertPageSize, setAlertPageSize] = useState(8)
   const [selectedAlertId, setSelectedAlertId] = useState<number | null>(null)
   const [openInvestigation, setOpenInvestigation] = useState(false)
   const [notesByAlertId, setNotesByAlertId] = useState<Record<number, InvestigationNote[]>>({})
@@ -159,6 +149,11 @@ function App() {
   const [appliedTxMinAmount, setAppliedTxMinAmount] = useState(DEFAULT_TX_FILTERS.minAmount)
   const [appliedTxMaxAmount, setAppliedTxMaxAmount] = useState(DEFAULT_TX_FILTERS.maxAmount)
   const [appliedTxSortBy, setAppliedTxSortBy] = useState<'TIME_DESC' | 'AMOUNT_DESC' | 'AMOUNT_ASC'>(DEFAULT_TX_FILTERS.sortBy)
+  const [ledgerTransactions, setLedgerTransactions] = useState<TransactionResponse[]>([])
+  const [txPage, setTxPage] = useState(1)
+  const [txPageSize, setTxPageSize] = useState(8)
+  const [txTotalTransactions, setTxTotalTransactions] = useState(0)
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
   const [selectedTxId, setSelectedTxId] = useState<number | null>(null)
   const [createdTxId, setCreatedTxId] = useState<number | null>(null)
   const [isCreateTxModalOpen, setIsCreateTxModalOpen] = useState(false)
@@ -181,11 +176,6 @@ function App() {
     currency: '',
     description: '',
   })
-
-  const [apiEndpoint, setApiEndpoint] = useState(API_DOCS[0].path)
-  const [apiMethod, setApiMethod] = useState(API_DOCS[0].method)
-  const [apiBody, setApiBody] = useState('{\n  "accountId": "ACC-001",\n  "payeeId": "PAYEE-009",\n  "amount": 500,\n  "currency": "GBP"\n}')
-  const [apiResponse, setApiResponse] = useState('')
 
   const [simulatorRunning, setSimulatorRunning] = useState<string | null>(null)
   const [simulatorResult, setSimulatorResult] = useState<SimulationResult | null>(null)
@@ -237,6 +227,84 @@ function App() {
     })
     return map
   }, [alerts])
+
+  const loadTransactionLedger = useCallback(async () => {
+    setTransactionsLoading(true)
+    setError(null)
+    try {
+      const rawResult = await getTransactions({
+        search: appliedTxSearch,
+        status: appliedTxStatusFilter === 'ALL' ? '' : appliedTxStatusFilter,
+        minAmount: appliedTxMinAmount,
+        maxAmount: appliedTxMaxAmount,
+        sortBy: appliedTxSortBy,
+        page: txPage - 1,
+        size: txPageSize,
+      })
+
+      const result: PagedResponse<TransactionResponse> = Array.isArray(rawResult)
+        ? (() => {
+          const normalizedSearch = appliedTxSearch.trim().toLowerCase()
+          const filtered = rawResult
+            .filter((entry) => {
+              const searchMatch =
+                normalizedSearch.length === 0 ||
+                `${entry.id}`.includes(normalizedSearch) ||
+                entry.accountId.toLowerCase().includes(normalizedSearch) ||
+                entry.payeeId.toLowerCase().includes(normalizedSearch)
+              const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.status === appliedTxStatusFilter
+              const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
+              const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
+              return searchMatch && statusMatch && minMatch && maxMatch
+            })
+            .sort((left, right) => {
+              if (appliedTxSortBy === 'AMOUNT_ASC') {
+                return Number(left.amount) - Number(right.amount)
+              }
+              if (appliedTxSortBy === 'AMOUNT_DESC') {
+                return Number(right.amount) - Number(left.amount)
+              }
+              return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
+            })
+
+          const safePage = Math.max(txPage - 1, 0)
+          const start = safePage * txPageSize
+          const end = start + txPageSize
+          const totalElements = filtered.length
+          const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / txPageSize)
+
+          return {
+            items: filtered.slice(start, end),
+            page: safePage,
+            size: txPageSize,
+            totalElements,
+            totalPages,
+          }
+        })()
+        : rawResult
+
+      setLedgerTransactions(result.items)
+      setTxTotalTransactions(result.totalElements)
+
+      if (result.totalElements > 0 && result.items.length === 0 && txPage > 1) {
+        setTxPage(Math.max(1, result.totalPages))
+      }
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load transactions from backend')
+      setLedgerTransactions([])
+      setTxTotalTransactions(0)
+    } finally {
+      setTransactionsLoading(false)
+    }
+  }, [appliedTxMaxAmount, appliedTxMinAmount, appliedTxSearch, appliedTxSortBy, appliedTxStatusFilter, txPage, txPageSize])
+
+  useEffect(() => {
+    if (activeTab !== 'transactions') {
+      return
+    }
+
+    void loadTransactionLedger()
+  }, [activeTab, loadTransactionLedger])
 
   const metrics = useMemo(() => {
     const openAlerts = alerts.filter((entry) => !['CLOSED', 'DISMISSED'].includes(entry.status)).length
@@ -319,6 +387,24 @@ function App() {
       return alertSortDirection === 'desc' ? -compareValue : compareValue
     })
   }, [alertSortColumn, alertSortDirection, filteredAlerts])
+
+  const alertTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(sortedAlerts.length / Math.max(1, alertPageSize))),
+    [alertPageSize, sortedAlerts.length],
+  )
+
+  const pagedAlerts = useMemo(() => {
+    const safePage = Math.min(Math.max(1, alertPage), alertTotalPages)
+    const start = (safePage - 1) * alertPageSize
+    const end = start + alertPageSize
+    return sortedAlerts.slice(start, end)
+  }, [alertPage, alertPageSize, alertTotalPages, sortedAlerts])
+
+  useEffect(() => {
+    if (alertPage > alertTotalPages) {
+      setAlertPage(alertTotalPages)
+    }
+  }, [alertPage, alertTotalPages])
 
   const selectedAlert = useMemo(
     () => alerts.find((entry) => entry.id === selectedAlertId) ?? null,
@@ -513,6 +599,7 @@ function App() {
     setAppliedAlertSearchAlertId(alertSearchAlertIdDraft)
     setAppliedAlertSearchTransactionId(alertSearchTransactionIdDraft)
     setAppliedAlertSearchAccountId(alertSearchAccountIdDraft)
+    setAlertPage(1)
   }, [
     alertFilterStatusDraft,
     alertFilterSeverityDraft,
@@ -535,6 +622,7 @@ function App() {
     setAppliedAlertSearchAlertId('')
     setAppliedAlertSearchTransactionId('')
     setAppliedAlertSearchAccountId('')
+    setAlertPage(1)
   }, [])
 
   const toggleAlertSort = useCallback((column: AlertSortColumn) => {
@@ -547,57 +635,21 @@ function App() {
     setAlertSortDirection('asc')
   }, [alertSortColumn])
 
-  const derivedTransactions = useMemo(() => {
-    const sortedTransactions = transactions
-      .map((entry) => {
-        const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
-        return { ...entry, derivedStatus: entry.status ?? 'APPROVED', linkedAlerts }
-      })
-      .filter((entry) => {
-        const searchValue = appliedTxSearch.trim().toLowerCase()
-        const searchMatch =
-          searchValue.length === 0 ||
-          `${entry.id}`.includes(searchValue) ||
-          entry.accountId.toLowerCase().includes(searchValue) ||
-          entry.payeeId.toLowerCase().includes(searchValue)
-        const statusMatch = appliedTxStatusFilter === 'ALL' ? true : entry.derivedStatus === appliedTxStatusFilter
-        const minMatch = appliedTxMinAmount ? Number(entry.amount) >= Number(appliedTxMinAmount) : true
-        const maxMatch = appliedTxMaxAmount ? Number(entry.amount) <= Number(appliedTxMaxAmount) : true
-        return searchMatch && statusMatch && minMatch && maxMatch
-      })
-      .sort((left, right) => {
-        if (appliedTxSortBy === 'AMOUNT_ASC') {
-          return Number(left.amount) - Number(right.amount)
-        }
-        if (appliedTxSortBy === 'AMOUNT_DESC') {
-          return Number(right.amount) - Number(left.amount)
-        }
-        return (new Date(right.occurredAt ?? 0).getTime() || 0) - (new Date(left.occurredAt ?? 0).getTime() || 0)
-      })
+  const derivedTransactions = useMemo<TransactionLedgerEntry[]>(() => {
+    return ledgerTransactions.map((entry) => {
+      const linkedAlerts = alertsByTransaction.get(entry.id) ?? []
+      return {
+        ...entry,
+        derivedStatus: entry.status ?? 'APPROVED',
+        linkedAlerts,
+      }
+    })
+  }, [alertsByTransaction, ledgerTransactions])
 
-    if (createdTxId === null) {
-      return sortedTransactions
-    }
-
-    const createdTransactionIndex = sortedTransactions.findIndex((entry) => entry.id === createdTxId)
-
-    if (createdTransactionIndex <= 0) {
-      return sortedTransactions
-    }
-
-    const createdTransaction = sortedTransactions[createdTransactionIndex]
-    const withoutCreatedTransaction = sortedTransactions.filter((entry) => entry.id !== createdTxId)
-    return [createdTransaction, ...withoutCreatedTransaction]
-  }, [
-    alertsByTransaction,
-    appliedTxMaxAmount,
-    appliedTxMinAmount,
-    appliedTxSearch,
-    appliedTxSortBy,
-    appliedTxStatusFilter,
-    createdTxId,
-    transactions,
-  ])
+  const txTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(txTotalTransactions / Math.max(1, txPageSize))),
+    [txPageSize, txTotalTransactions],
+  )
 
   useEffect(() => {
     if (createdTxId === null || activeTab !== 'transactions') {
@@ -623,12 +675,20 @@ function App() {
     [derivedTransactions, selectedTxId],
   )
 
+  const handleRefresh = useCallback(() => {
+    void loadAll()
+    if (activeTab === 'transactions') {
+      void loadTransactionLedger()
+    }
+  }, [activeTab, loadAll, loadTransactionLedger])
+
   const applyTransactionFilters = useCallback(() => {
     setAppliedTxSearch(txSearch)
     setAppliedTxStatusFilter(txStatusFilter)
     setAppliedTxMinAmount(txMinAmount)
     setAppliedTxMaxAmount(txMaxAmount)
     setAppliedTxSortBy(txSortBy)
+    setTxPage(1)
   }, [txMaxAmount, txMinAmount, txSearch, txSortBy, txStatusFilter])
 
   const resetTransactionFilters = useCallback(() => {
@@ -642,6 +702,7 @@ function App() {
     setAppliedTxMinAmount(DEFAULT_TX_FILTERS.minAmount)
     setAppliedTxMaxAmount(DEFAULT_TX_FILTERS.maxAmount)
     setAppliedTxSortBy(DEFAULT_TX_FILTERS.sortBy)
+    setTxPage(1)
     setCreatedTxId(null)
   }, [])
 
@@ -657,8 +718,9 @@ function App() {
         description: transactionForm.description || null,
       })
 
-      setTransactions((prev) => [createdTransaction, ...prev.filter((entry) => entry.id !== createdTransaction.id)])
       setCreatedTxId(createdTransaction.id)
+      const shouldReloadLedgerImmediately = txPage === 1
+      setTxPage(1)
 
       setTransactionForm({
         accountId: '',
@@ -669,8 +731,10 @@ function App() {
       })
       setIsCreateTxModalOpen(false)
 
-      // Keep dashboard metrics consistent while the new row is shown immediately in the ledger.
       void loadAll()
+      if (shouldReloadLedgerImmediately) {
+        void loadTransactionLedger()
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Failed to create transaction')
     }
@@ -845,20 +909,6 @@ function App() {
     await loadAll()
   }
 
-  const runApiRequest = async () => {
-    setApiResponse('Running request...')
-    try {
-      const payload = apiMethod === 'GET' || apiMethod === 'DELETE' ? undefined : JSON.parse(apiBody)
-      const result = await apiRequest<unknown>(apiEndpoint, {
-        method: apiMethod,
-        body: payload ? JSON.stringify(payload) : undefined,
-      })
-      setApiResponse(JSON.stringify(result, null, 2))
-    } catch (requestError) {
-      setApiResponse(requestError instanceof Error ? requestError.message : 'Request failed')
-    }
-  }
-
   const pageTitle = TABS.find((entry) => entry.id === activeTab)?.label ?? 'Dashboard'
 
   return (
@@ -920,7 +970,7 @@ function App() {
             <button className="ghost icon-btn" type="button" onClick={() => setDarkMode((prev) => !prev)}>
               {darkMode ? <Sun size={14} /> : <Moon size={14} />}
             </button>
-            <button className="primary icon-btn" type="button" onClick={() => void loadAll()}>
+            <button className="primary icon-btn" type="button" onClick={handleRefresh}>
               <Bell size={14} />
             </button>
             <div className="avatar-chip">
@@ -1040,8 +1090,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeWorkloadAlerts.map((entry) => (
-                      <tr key={entry.id}>
+                    {activeWorkloadAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
                         <td className="mono">#{entry.id}</td>
                         <td>
                           <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
@@ -1246,7 +1296,8 @@ function App() {
             </section>
 
             <section className="card">
-              <h3>Transactions Ledger ({derivedTransactions.length})</h3>
+              <h3>Transactions Ledger ({txTotalTransactions})</h3>
+              {transactionsLoading ? <p className="muted table-caption">Loading transactions...</p> : null}
               <div ref={ledgerTableWrapRef} className="table-wrap">
                 <table>
                   <thead>
@@ -1286,9 +1337,30 @@ function App() {
                         </td>
                       </tr>
                     ))}
+                    {!derivedTransactions.length ? (
+                      <tr>
+                        <td className="empty-row" colSpan={8}>
+                          No transactions matched the selected filters.
+                        </td>
+                      </tr>
+                    ) : null}
                   </tbody>
                 </table>
               </div>
+
+              <PaginationControls
+                page={txPage}
+                pageSize={txPageSize}
+                totalItems={txTotalTransactions}
+                totalPages={txTotalPages}
+                rowsPerPageOptions={[8, 16, 24]}
+                onPageChange={setTxPage}
+                onRowsPerPageChange={(nextPageSize) => {
+                  setTxPageSize(nextPageSize)
+                  setTxPage(1)
+                }}
+                loading={transactionsLoading}
+              />
             </section>
 
             {selectedTx ? (
@@ -1420,8 +1492,8 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedAlerts.map((entry) => (
-                      <tr key={entry.id}>
+                    {pagedAlerts.map((entry, index) => (
+                      <tr key={`${entry.id}-${entry.createdAt}-${entry.transactionId}-${index}`}>
                         <td className="mono">AL-{entry.id}</td>
                         <td>
                           <span className={`badge sev-${entry.severity.toLowerCase()}`}>{entry.severity}</span>
@@ -1440,7 +1512,7 @@ function App() {
                         </td>
                       </tr>
                     ))}
-                    {!sortedAlerts.length ? (
+                    {!pagedAlerts.length ? (
                       <tr>
                         <td className="empty-row" colSpan={8}>
                           No alerts matched the selected filters.
@@ -1450,6 +1522,20 @@ function App() {
                   </tbody>
                 </table>
               </div>
+
+              <PaginationControls
+                page={alertPage}
+                pageSize={alertPageSize}
+                totalItems={sortedAlerts.length}
+                totalPages={alertTotalPages}
+                rowsPerPageOptions={[8, 16, 24]}
+                onPageChange={setAlertPage}
+                onRowsPerPageChange={(nextPageSize) => {
+                  setAlertPageSize(nextPageSize)
+                  setAlertPage(1)
+                }}
+                loading={loading}
+              />
             </section>
           </div>
         ) : null}
@@ -1660,65 +1746,6 @@ function App() {
                 )}
               </article>
             ) : null}
-          </section>
-        ) : null}
-
-        {activeTab === 'apidocs' ? (
-          <section className="panel-stack">
-            <article className="card">
-              <h3>OpenAPI / REST API Docs & Live Runner</h3>
-              <div className="split-grid">
-                <div>
-                  <h4>Endpoints</h4>
-                  <ul className="mono endpoint-list">
-                    {API_DOCS.map((entry) => (
-                      <li key={`${entry.method}-${entry.path}`}>
-                        <button
-                          type="button"
-                          className="ghost endpoint-btn"
-                          onClick={() => {
-                            setApiMethod(entry.method)
-                            setApiEndpoint(entry.path.replace('{id}', '1'))
-                          }}
-                        >
-                          {entry.method} {entry.path}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="api-runner">
-                  <label>
-                    Method
-                    <select value={apiMethod} onChange={(event) => setApiMethod(event.target.value)}>
-                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((method) => <option key={method} value={method}>{method}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    Endpoint
-                    <input className="mono" value={apiEndpoint} onChange={(event) => setApiEndpoint(event.target.value)} />
-                  </label>
-                  <label>
-                    JSON Body
-                    <textarea className="mono api-body" value={apiBody} onChange={(event) => setApiBody(event.target.value)} />
-                  </label>
-                  <div className="api-runner-actions">
-                    <button type="button" className="primary" onClick={() => void runApiRequest()}>Run Request</button>
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => {
-                        const openApiJson = JSON.stringify({ openapi: '3.0.0', paths: API_DOCS }, null, 2)
-                        void navigator.clipboard.writeText(openApiJson)
-                      }}
-                    >
-                      Copy OpenAPI 3.0 JSON
-                    </button>
-                  </div>
-                  <pre className="response-box mono">{apiResponse || 'Response output will appear here.'}</pre>
-                </div>
-              </div>
-            </article>
           </section>
         ) : null}
 

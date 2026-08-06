@@ -17,7 +17,6 @@ This application provides:
 - **Framework**: Spring Boot 3.3.2
 - **Language**: Java 17
 - **Database**: MySQL
-- **API Documentation**: OpenAPI (Swagger)
 - **Location**: Root directory `/src`
 
 ### Frontend
@@ -53,7 +52,6 @@ cd frontend && npm install && npm run dev
 Then visit:
 - **Frontend**: [http://localhost:5173](http://localhost:5173)
 - **Backend API**: [http://localhost:8080](http://localhost:8080)
-- **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 
 ## 📁 Project Structure
 
@@ -107,10 +105,6 @@ Then visit:
 ### SDN Screening
 - `GET /api/sdn/search?name={name}&threshold={threshold}` - Fuzzy search the loaded SDN list
 - `GET /api/sdn/count` - Get the number of loaded SDN entries
-
-### Documentation
-- `GET /api-docs` - OpenAPI JSON specification
-- `GET /swagger-ui.html` - Interactive API documentation
 
 ## 🧪 Testing
 
@@ -195,7 +189,6 @@ For production deployment instructions and Docker setup, please refer to the dep
 - **[Setup Guide](./SETUP.md)** - Detailed local development setup
 - **[Java Code Reference](./FBI_Team_Reference_Part1.md)** - Backend technical reference
 - **[Project Reference](./FBI_Team_Reference_Part2.md)** - Additional project documentation
-- **[API Documentation](http://localhost:8080/swagger-ui.html)** - Interactive API docs (after running backend)
 
 ## 🤝 Contributing
 
