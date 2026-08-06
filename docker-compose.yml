@@ -28,7 +28,7 @@ services:
       DB_USERNAME: root
       DB_PASSWORD: ${DB_PASSWORD}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      APP_CORS_ALLOWED_ORIGINS: http://localhost
+      APP_CORS_ALLOWED_ORIGINS: http://localhost,http://10.9.72.191:8082,http://10.9.72.191:8081,http://10.9.72.191
     ports:
       - "8081:8080"
 
