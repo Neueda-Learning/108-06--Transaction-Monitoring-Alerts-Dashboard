@@ -84,16 +84,35 @@ public class RuleEvaluationService {
         alert.setRuleType(rule.getType());
         alert.setSeverity(rule.getSeverity());
         alert.setStatus(AlertStatus.OPEN);
-        alert.setMessage(buildMessage(rule.getType(), transaction));
+        alert.setMessage(buildMessage(rule, transaction));
         return alert;
     }
 
-    private String buildMessage(RuleType type, MonitoredTransaction transaction) {
-        return switch (type) {
-            case AMOUNT_THRESHOLD -> "Amount threshold breached for transaction " + transaction.getId();
-            case VELOCITY -> "Velocity rule triggered for account " + transaction.getAccountId();
-            case NEW_PAYEE -> "New payee detected for account " + transaction.getAccountId();
-            case DAILY_LIMIT -> "Daily limit exceeded for account " + transaction.getAccountId();
+    // Includes the actual triggering values (not just the rule name) so operators can triage
+    // an alert's severity from the list view without opening the full investigation dialog.
+    private String buildMessage(MonitoringRule rule, MonitoredTransaction transaction) {
+        return switch (rule.getType()) {
+            case AMOUNT_THRESHOLD -> String.format(
+                "Transaction amount %.2f %s exceeds threshold %.2f",
+                transaction.getAmount(), transaction.getCurrency(), rule.getAmountThreshold());
+            case VELOCITY -> {
+                Instant from = transaction.getOccurredAt().minusSeconds(rule.getVelocityWindowMinutes() * 60L);
+                long count = transactionRepository.countByAccountIdAndOccurredAtAfter(transaction.getAccountId(), from);
+                yield String.format(
+                    "%d transactions in the last %d minutes exceeds limit of %d for account %s",
+                    count, rule.getVelocityWindowMinutes(), rule.getVelocityCount(), transaction.getAccountId());
+            }
+            case NEW_PAYEE -> String.format(
+                "First transaction to payee %s from account %s", transaction.getPayeeId(), transaction.getAccountId());
+            case DAILY_LIMIT -> {
+                LocalDate date = transaction.getOccurredAt().atOffset(ZoneOffset.UTC).toLocalDate();
+                Instant dayStart = date.atStartOfDay().toInstant(ZoneOffset.UTC);
+                Instant nextDayStart = dayStart.plusSeconds(24L * 60L * 60L);
+                BigDecimal total = transactionRepository.sumAmountForAccountBetween(transaction.getAccountId(), dayStart, nextDayStart);
+                yield String.format(
+                    "Daily total %.2f exceeds limit %.2f for account %s",
+                    total, rule.getDailyLimit(), transaction.getAccountId());
+            }
             case SDN_MATCH -> "SDN sanctions match for transaction " + transaction.getId();
         };
     }

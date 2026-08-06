@@ -302,7 +302,7 @@ body {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 18px;
 }
 
@@ -340,6 +340,10 @@ body {
 
 .metric-accent-violet::before {
   background: linear-gradient(90deg, #8b5cf6, #6d28d9);
+}
+
+.metric-accent-amber::before {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
 }
 
 .metric-card-head {
@@ -389,13 +393,19 @@ body {
   color: #6d28d9;
 }
 
+.metric-icon-amber {
+  background: rgba(245, 158, 11, 0.14);
+  color: #d97706;
+}
+
 .metric-card p {
   margin: 16px 0 6px;
-  font-size: 2.15rem;
+  font-size: clamp(1.4rem, 2.4vw, 2.15rem);
   font-weight: 800;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  line-height: 1.08;
+  line-height: 1.1;
+  overflow-wrap: break-word;
 }
 
 .trend {
@@ -749,6 +759,16 @@ th {
 .table-caption {
   margin-bottom: 14px;
   font-size: 0.83rem;
+}
+
+.alert-trigger-context {
+  font-size: 0.76rem;
+  margin-top: 2px;
+}
+
+.alert-age-breach {
+  color: #b91c1c;
+  font-weight: 700;
 }
 
 .alerts-filter-actions {

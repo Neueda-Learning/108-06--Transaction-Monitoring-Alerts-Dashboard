@@ -43,3 +43,24 @@ export function riskBucket(score: number): 'low' | 'medium' | 'high' | 'critical
   return 'low'
 }
 
+// Compliance SLA target: unresolved alerts should be reviewed within 4 hours.
+export const ALERT_SLA_BREACH_MINUTES = 4 * 60
+
+export function getAlertAgeMinutes(createdAt: string): number {
+  const created = new Date(createdAt).getTime()
+  if (Number.isNaN(created)) {
+    return 0
+  }
+  return Math.max(0, Math.floor((Date.now() - created) / 60000))
+}
+
+export function formatAlertAge(ageMinutes: number): string {
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m`
+  }
+  const hours = Math.floor(ageMinutes / 60)
+  const minutes = ageMinutes % 60
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+}
+
+
